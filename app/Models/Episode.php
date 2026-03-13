@@ -18,6 +18,8 @@ class Episode extends Model
     protected $fillable = [
         'title',
         'page_url',
+        'episode_number',
+        'image_url',
         'status',
         'error_message',
         'last_scraped_at',
@@ -26,6 +28,7 @@ class Episode extends Model
     protected function casts(): array
     {
         return [
+            'episode_number' => 'integer',
             'last_scraped_at' => 'datetime',
         ];
     }
