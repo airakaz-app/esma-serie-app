@@ -11,6 +11,8 @@ class SeriesInfoController extends Controller
     {
         $seriesInfos = SeriesInfo::query()
             ->withCount('episodes')
+            ->withMin('episodes', 'episode_number')
+            ->withMax('episodes', 'episode_number')
             ->orderBy('title')
             ->get();
 
