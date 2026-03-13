@@ -7,8 +7,8 @@ use App\Models\SeriesInfo;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
 
 class SeriesInfoController extends Controller
 {
@@ -59,17 +59,45 @@ class SeriesInfoController extends Controller
             'seriesInfoTitle' => null,
         ], now()->addHours(2));
 
-        $process = new Process([
-            PHP_BINARY,
-            base_path('artisan'),
-            'scrape:episodes',
-            '--list-page-url='.$listPageUrl,
-            '--tracking-key='.$trackingKey,
+        $escapedPhpBinary = escapeshellarg(PHP_BINARY);
+        $escapedArtisanPath = escapeshellarg(base_path('artisan'));
+        $escapedListPageUrl = escapeshellarg($listPageUrl);
+        $escapedTrackingKey = escapeshellarg($trackingKey);
+
+        $command = sprintf(
+            'cd %s && nohup %s %s scrape:episodes --list-page-url=%s --tracking-key=%s >> %s 2>&1 &',
+            escapeshellarg(base_path()),
+            $escapedPhpBinary,
+            $escapedArtisanPath,
+            $escapedListPageUrl,
+            $escapedTrackingKey,
+            escapeshellarg(storage_path('logs/scrape-detached.log')),
+        );
+
+        exec($command, $output, $resultCode);
+
+        Log::info('Lancement du scraping en tâche détachée.', [
+            'tracking_key' => $trackingKey,
+            'result_code' => $resultCode,
+            'command' => $command,
         ]);
 
-        $process->setWorkingDirectory(base_path());
-        $process->disableOutput();
-        $process->start();
+        if ($resultCode !== 0) {
+            Cache::put($this->trackingCacheKey($trackingKey), [
+                'state' => 'error',
+                'message' => 'Impossible de lancer le scraping en arrière-plan.',
+                'episodesTotal' => 0,
+                'episodesProcessed' => 0,
+                'progressPercent' => 0,
+                'seriesInfoId' => null,
+                'seriesInfoTitle' => null,
+            ], now()->addHours(2));
+
+            return response()->json([
+                'started' => false,
+                'message' => 'Le scraping n’a pas pu démarrer.',
+            ], 500);
+        }
 
         return response()->json([
             'started' => true,

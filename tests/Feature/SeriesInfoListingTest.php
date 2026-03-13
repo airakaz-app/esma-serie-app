@@ -114,6 +114,9 @@ class SeriesInfoListingTest extends TestCase
             'progressPercent' => 33,
             'seriesInfoId' => 11,
             'seriesInfoTitle' => 'Serie Eleven',
+            'currentEpisodeTitle' => 'Episode 4',
+            'lastError' => null,
+            'updatedAt' => now()->toIso8601String(),
         ], now()->addMinutes(5));
 
         $response = $this->getJson(route('series-infos.scrape-status', 'test-key'));
@@ -122,6 +125,7 @@ class SeriesInfoListingTest extends TestCase
         $response->assertJsonPath('state', 'running');
         $response->assertJsonPath('progressPercent', 33);
         $response->assertJsonPath('seriesInfoId', 11);
+        $response->assertJsonPath('currentEpisodeTitle', 'Episode 4');
     }
 
     public function test_series_infos_page_scrape_requires_valid_url(): void
