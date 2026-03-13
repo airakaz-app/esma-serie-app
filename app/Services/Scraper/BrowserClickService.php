@@ -8,6 +8,7 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 class BrowserClickService
 {
@@ -24,6 +25,16 @@ class BrowserClickService
      */
     public function resolveDownloadUrl(string $iframeUrl): array
     {
+        $strategy = (string) config('scraper.browser_strategy', 'auto');
+
+        if (in_array($strategy, ['python', 'auto'], true)) {
+            $pythonResult = $this->resolveWithPythonBridge($iframeUrl);
+
+            if ($pythonResult['success'] || $strategy === 'python') {
+                return $pythonResult;
+            }
+        }
+
         $sessionId = null;
 
         try {
@@ -69,6 +80,72 @@ class BrowserClickService
                 $this->client()->delete("/session/{$sessionId}");
             }
         }
+    }
+
+    /**
+     * @return array{success:bool,final_url:?string,final_html:?string,error:?string}
+     */
+    private function resolveWithPythonBridge(string $iframeUrl): array
+    {
+        $pythonBinary = (string) config('scraper.python_binary', 'python3');
+        $scriptPath = base_path((string) config('scraper.python_script', 'browser_click.py'));
+
+        if (! is_file($scriptPath)) {
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => null,
+                'error' => "Script Python introuvable: {$scriptPath}",
+            ];
+        }
+
+        $process = new Process([
+            $pythonBinary,
+            $scriptPath,
+            '--iframe-url',
+            $iframeUrl,
+            '--timeout',
+            (string) config('scraper.browser_timeout', 30),
+            '--headless',
+            config('scraper.headless', true) ? '1' : '0',
+        ], base_path());
+
+        $process->setTimeout((int) config('scraper.python_timeout', 60));
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            $error = trim($process->getErrorOutput()) ?: trim($process->getOutput());
+
+            Log::warning('Bridge Python Selenium en échec', [
+                'iframe_url' => $iframeUrl,
+                'error' => $error,
+            ]);
+
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => null,
+                'error' => $error !== '' ? $error : 'Le processus Python a échoué.',
+            ];
+        }
+
+        $decoded = json_decode($process->getOutput(), true);
+
+        if (! is_array($decoded)) {
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => null,
+                'error' => 'Réponse JSON invalide depuis la bridge Python.',
+            ];
+        }
+
+        return [
+            'success' => (bool) ($decoded['success'] ?? false),
+            'final_url' => isset($decoded['final_url']) ? (string) $decoded['final_url'] : null,
+            'final_html' => isset($decoded['final_html']) ? (string) $decoded['final_html'] : null,
+            'error' => isset($decoded['error']) && is_string($decoded['error']) && $decoded['error'] !== '' ? $decoded['error'] : null,
+        ];
     }
 
     public function summarizeHtml(string $html): array
@@ -187,7 +264,7 @@ class BrowserClickService
 
         foreach ($binaryCandidates as $binary) {
             $command = sprintf(
-                '%s --port=%d --allowed-ips="" --allowed-origins="*" --url-base=/ >/tmp/scraper-chromedriver.log 2>&1 & echo $!',
+                '%s --port=%d >/tmp/scraper-chromedriver.log 2>&1 & echo $!',
                 escapeshellcmd($binary),
                 $port,
             );

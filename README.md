@@ -11,7 +11,7 @@ Le flux implémenté est :
 3. ouvrir chaque page épisode
 4. extraire les serveurs utiles (par défaut `vdesk`)
 5. récupérer l'URL d'iframe
-6. ouvrir l'iframe via navigateur headless (WebDriver)
+6. ouvrir l'iframe via navigateur headless (bridge Python Selenium, fallback WebDriver HTTP)
 7. cliquer sur `#method_free`
 8. cliquer sur `#downloadbtn`
 9. attendre la stabilisation/redirection
@@ -24,7 +24,8 @@ Le flux implémenté est :
 - `app/Console/Commands/ScrapeEpisodesCommand.php` : orchestration complète.
 - `app/Services/Scraper/EpisodeListScraper.php` : scraping page liste.
 - `app/Services/Scraper/EpisodePageScraper.php` : scraping page épisode + iframe.
-- `app/Services/Scraper/BrowserClickService.php` : automation navigateur headless via API WebDriver.
+- `app/Services/Scraper/BrowserClickService.php` : automation navigateur headless (stratégie Python Selenium + fallback WebDriver HTTP).
+- `browser_click.py` : bridge Selenium robuste alignée sur le flux de référence.
 - `app/Services/Scraper/HtmlFetcher.php` : client HTTP.
 - `app/Services/Scraper/UrlHelper.php` : normalisation d'URLs relatives.
 - `app/Models/Episode.php`, `app/Models/EpisodeServer.php` : persistance de l'état.
@@ -57,8 +58,9 @@ Le flux implémenté est :
 
 - PHP 8.2+
 - Base SQL configurée dans `.env`
-- Un WebDriver compatible Chrome (ex: `chromedriver` ou Selenium standalone)
-- Un navigateur Chrome/Chromium installé sur l'hôte WebDriver
+- Python 3 + package `selenium` installés localement (`pip install selenium`)
+- Un navigateur Chrome/Chromium installé localement (Selenium Manager gère automatiquement le driver)
+- Optionnel: un endpoint WebDriver externe (chromedriver/selenium) si vous gardez le mode fallback
 
 ## Installation
 
@@ -80,6 +82,10 @@ Variables disponibles :
 - `SCRAPER_BROWSER_TIMEOUT` (défaut `30`)
 - `SCRAPER_MAX_RETRIES` (défaut `3`)
 - `SCRAPER_HEADLESS` (`true` / `false`)
+- `SCRAPER_BROWSER_STRATEGY` (`auto`, `python`, `webdriver`)
+- `SCRAPER_PYTHON_BINARY` (défaut `python3`)
+- `SCRAPER_PYTHON_SCRIPT` (défaut `browser_click.py`)
+- `SCRAPER_PYTHON_TIMEOUT` (défaut `60`)
 - `SCRAPER_WEBDRIVER_URL` (défaut `http://127.0.0.1:9515`)
 - `SCRAPER_WEBDRIVER_AUTOSTART` (`true` / `false`, défaut `true`)
 - `SCRAPER_WEBDRIVER_BINARY` (défaut `chromedriver`)
@@ -120,21 +126,22 @@ Le système est conçu pour reprendre proprement :
 - Aucun stockage JSON/Excel n'est utilisé.
 - Toute la progression est persistée en SQL.
 
-## Dépannage WebDriver
+## Dépannage navigateur
 
-Si vous obtenez `cURL error 7 ... 127.0.0.1:9515/session`, cela signifie que le service WebDriver n'est pas démarré ou pas joignable à l'URL configurée.
+Par défaut, utilisez `SCRAPER_BROWSER_STRATEGY=auto` :
 
-Solutions :
+1. tentative Python Selenium locale (même approche que `test.py`)
+2. fallback WebDriver HTTP existant si Python échoue
 
-1. Démarrer manuellement un WebDriver (Selenium/Chromedriver) et vérifier `SCRAPER_WEBDRIVER_URL`.
-2. Ou activer l'auto-démarrage local :
+Configuration recommandée :
 
 ```env
-SCRAPER_WEBDRIVER_AUTOSTART=true
-SCRAPER_WEBDRIVER_BINARY=chromedriver
+SCRAPER_BROWSER_STRATEGY=python
+SCRAPER_PYTHON_BINARY=python3
+SCRAPER_PYTHON_SCRIPT=browser_click.py
+SCRAPER_HEADLESS=true
 ```
 
-Le scraper teste automatiquement plusieurs endpoints WebDriver (`9515`, `4444`, `4444/wd/hub` + URL configurée), puis tente de lancer `chromedriver` si activé, avant d'échouer avec un message détaillant toutes les URLs testées.
+Si vous forcez `SCRAPER_BROWSER_STRATEGY=webdriver`, le scraper conserve la logique WebDriver HTTP (endpoints `9515`, `4444`, `4444/wd/hub` + auto-start chromedriver si activé).
 
-
-En cas d'échec d'auto-démarrage, consultez aussi `/tmp/scraper-chromedriver.log` et `storage/logs/laravel.log` pour le détail des tentatives (URLs testées, binaires, erreurs réseau, PID lancé).
+En cas d'échec, consultez `storage/logs/laravel.log` (et `/tmp/scraper-chromedriver.log` uniquement pour le mode `webdriver`).
