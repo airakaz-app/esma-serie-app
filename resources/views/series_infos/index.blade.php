@@ -60,11 +60,11 @@
                                     <span class="badge text-bg-primary">{{ $seriesInfo->episodes_count }} épisode(s)</span>
                                 </div>
 
-                                @if ($seriesInfo->story)
+                                {{-- @if ($seriesInfo->story)
                                     <p class="card-text small text-secondary mb-1">{{ \Illuminate\Support\Str::limit($seriesInfo->story, 130) }}</p>
-                                @endif
+                                @endif --}}
 
-                                <div class="small text-secondary mt-auto">
+                                {{-- <div class="small text-secondary mt-auto">
                                     @if ($seriesInfo->episodes_min_episode_number || $seriesInfo->episodes_max_episode_number)
                                         <p class="mb-1">
                                             Plage d'épisodes:
@@ -79,7 +79,7 @@
                                     @if ($actors->isNotEmpty())
                                         <p class="mb-0">Acteurs: <span class="text-light">{{ $actors->implode(', ') }}</span></p>
                                     @endif
-                                </div>
+                                </div> --}}
                             </div>
                         </article>
                     </a>
