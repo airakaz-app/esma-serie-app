@@ -1,0 +1,41 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\SeriesInfo;
+use Illuminate\Contracts\View\View;
+
+class SeriesInfoController extends Controller
+{
+    public function index(): View
+    {
+        $seriesInfos = SeriesInfo::query()
+            ->withCount('episodes')
+            ->withMin('episodes', 'episode_number')
+            ->withMax('episodes', 'episode_number')
+            ->orderBy('title')
+            ->get();
+
+        return view('series_infos.index', [
+            'seriesInfos' => $seriesInfos,
+        ]);
+    }
+
+    public function show(SeriesInfo $seriesInfo): View
+    {
+        $seriesInfo->load([
+            'episodes' => function ($query): void {
+                $query
+                    ->with(['servers' => function ($serverQuery): void {
+                        $serverQuery->orderByDesc('id');
+                    }])
+                    ->orderBy('episode_number')
+                    ->orderBy('id');
+            },
+        ]);
+
+        return view('series_infos.show', [
+            'seriesInfo' => $seriesInfo,
+        ]);
+    }
+}
