@@ -1,60 +1,136 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# ESMA Serie App - Scraper Laravel automatisé
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Ce projet implémente un scraper **100% automatisé** en Laravel, avec persistance SQL et reprise après interruption.
 
-## About Laravel
+## Fonctionnement
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+Le flux implémenté est :
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+1. lire la page liste (`SCRAPER_LIST_PAGE_URL`)
+2. extraire les épisodes
+3. ouvrir chaque page épisode
+4. extraire les serveurs utiles (par défaut `vdesk`)
+5. récupérer l'URL d'iframe
+6. ouvrir l'iframe via navigateur headless (WebDriver)
+7. cliquer sur `#method_free`
+8. cliquer sur `#downloadbtn`
+9. attendre la stabilisation/redirection
+10. récupérer l'URL finale et un résumé HTML
+11. sauvegarder en base SQL
+12. reprendre où le traitement s'est arrêté
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Architecture
 
-## Learning Laravel
+- `app/Console/Commands/ScrapeEpisodesCommand.php` : orchestration complète.
+- `app/Services/Scraper/EpisodeListScraper.php` : scraping page liste.
+- `app/Services/Scraper/EpisodePageScraper.php` : scraping page épisode + iframe.
+- `app/Services/Scraper/BrowserClickService.php` : automation navigateur headless via API WebDriver.
+- `app/Services/Scraper/HtmlFetcher.php` : client HTTP.
+- `app/Services/Scraper/UrlHelper.php` : normalisation d'URLs relatives.
+- `app/Models/Episode.php`, `app/Models/EpisodeServer.php` : persistance de l'état.
+- `database/migrations/*episodes*` : schéma SQL.
+- `config/scraper.php` : configuration centralisée.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## Base de données
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### Table `episodes`
+- `title`
+- `page_url` (unique)
+- `status` (`pending`, `in_progress`, `done`, `error`)
+- `error_message`
+- `last_scraped_at`
 
-## Laravel Sponsors
+### Table `episode_servers`
+- `episode_id` (FK)
+- `server_name`, `host`
+- `server_page_url` (unique)
+- `iframe_url`
+- `click_success`
+- `final_url`
+- `result_title`, `result_h1`, `result_preview`
+- `status` (`pending`, `in_progress`, `done`, `error`)
+- `retry_count`
+- `error_message`
+- `last_scraped_at`
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## Prérequis
 
-### Premium Partners
+- PHP 8.2+
+- Base SQL configurée dans `.env`
+- Un WebDriver compatible Chrome (ex: `chromedriver` ou Selenium standalone)
+- Un navigateur Chrome/Chromium installé sur l'hôte WebDriver
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+## Installation
 
-## Contributing
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Configurer ensuite les variables scraper dans `.env`.
 
-## Code of Conduct
+## Configuration
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Variables disponibles :
 
-## Security Vulnerabilities
+- `SCRAPER_LIST_PAGE_URL`
+- `SCRAPER_HTTP_TIMEOUT` (défaut `20`)
+- `SCRAPER_BROWSER_TIMEOUT` (défaut `30`)
+- `SCRAPER_MAX_RETRIES` (défaut `3`)
+- `SCRAPER_HEADLESS` (`true` / `false`)
+- `SCRAPER_WEBDRIVER_URL` (défaut `http://127.0.0.1:9515`)
+- `SCRAPER_WEBDRIVER_AUTOSTART` (`true` / `false`, défaut `false`)
+- `SCRAPER_WEBDRIVER_BINARY` (défaut `chromedriver`)
+- `SCRAPER_WEBDRIVER_BOOT_TIMEOUT` (secondes, défaut `8`)
+- `SCRAPER_ALLOWED_HOSTS` (CSV, défaut `vdesk`)
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Lancement
 
-## License
+Commande principale :
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
-# esma-serie-app
+```bash
+php artisan scrape:episodes
+```
+
+Options :
+
+```bash
+php artisan scrape:episodes --limit=10
+php artisan scrape:episodes --episode-id=12
+php artisan scrape:episodes --only-pending
+php artisan scrape:episodes --retry-errors
+```
+
+## Reprise après interruption
+
+Le système est conçu pour reprendre proprement :
+
+- les épisodes/serveurs `done` ne sont pas retraités
+- si `iframe_url` est déjà connue, le flux reprend directement au navigateur
+- les erreurs sont conservées en base (`status=error`, `error_message`)
+- `retry_count` est incrémenté à chaque échec serveur
+- relancer la commande permet de continuer sans perdre l'état
+
+## Notes techniques
+
+- Le script Python racine est utilisé comme **référence métier** (sélecteurs/ordre du flux), mais l'implémentation est Laravel-first.
+- Aucun stockage JSON/Excel n'est utilisé.
+- Toute la progression est persistée en SQL.
+
+## Dépannage WebDriver
+
+Si vous obtenez `cURL error 7 ... 127.0.0.1:9515/session`, cela signifie que le service WebDriver n'est pas démarré ou pas joignable à l'URL configurée.
+
+Solutions :
+
+1. Démarrer manuellement un WebDriver (Selenium/Chromedriver) et vérifier `SCRAPER_WEBDRIVER_URL`.
+2. Ou activer l'auto-démarrage local :
+
+```env
+SCRAPER_WEBDRIVER_AUTOSTART=true
+SCRAPER_WEBDRIVER_BINARY=chromedriver
+```
+
+Dans ce mode, le scraper teste `/status`, tente de lancer `chromedriver` en arrière-plan, puis réessaie avant d'échouer avec un message explicite.
