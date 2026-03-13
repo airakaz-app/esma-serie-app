@@ -4,50 +4,90 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ $seriesInfo->title ?: 'Série' }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
-<div class="mx-auto max-w-7xl p-6 lg:p-8">
-    <a href="{{ route('series-infos.index') }}" class="inline-block text-sm text-indigo-300 hover:text-indigo-200">← Retour aux séries</a>
+<div class="container py-4 py-lg-5">
+    <a href="{{ route('series-infos.index') }}" class="text-decoration-none text-info">← Retour aux séries</a>
 
-    <section class="mt-4 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
-        <div class="grid gap-0 md:grid-cols-3">
-            <div class="aspect-[16/9] md:aspect-auto md:h-full bg-slate-900">
+    <section class="card border-0 bg-dark text-light mt-3 shadow-sm">
+        <div class="row g-0">
+            <div class="col-md-4 bg-black">
                 @if ($seriesInfo->cover_image_url)
-                    <img src="{{ $seriesInfo->cover_image_url }}" alt="Affiche {{ $seriesInfo->title ?: 'série' }}" class="h-full w-full object-cover">
+                    <img src="{{ $seriesInfo->cover_image_url }}" alt="Affiche {{ $seriesInfo->title ?: 'série' }}" class="img-fluid w-100 h-100 object-fit-cover">
                 @else
-                    <div class="flex h-full w-full items-center justify-center text-slate-500">Pas d'image</div>
+                    <div class="d-flex align-items-center justify-content-center h-100 text-secondary p-5">Pas d'image</div>
                 @endif
             </div>
-            <div class="space-y-3 p-5 md:col-span-2">
-                <h1 class="text-2xl font-bold">{{ $seriesInfo->title ?: 'Sans titre' }}</h1>
-                <p class="text-sm text-slate-400">{{ $seriesInfo->episodes->count() }} épisode(s) lié(s)</p>
-                @if ($seriesInfo->story)
-                    <p class="text-sm leading-6 text-slate-300">{{ $seriesInfo->story }}</p>
-                @endif
+            <div class="col-md-8">
+                <div class="card-body">
+                    <h1 class="h3 card-title">{{ $seriesInfo->title ?: 'Sans titre' }}</h1>
+                    <p class="card-text text-secondary">{{ $seriesInfo->episodes->count() }} épisode(s) lié(s)</p>
+                    @if ($seriesInfo->story)
+                        <p class="card-text">{{ $seriesInfo->story }}</p>
+                    @endif
+                </div>
             </div>
         </div>
     </section>
 
-    <section class="mt-6">
-        <h2 class="mb-3 text-lg font-semibold">Épisodes</h2>
+    <section class="mt-4">
+        <h2 class="h4 mb-3">Épisodes</h2>
 
-        <div class="grid gap-3">
+        <div class="row g-4 row-cols-2 row-cols-lg-3 row-cols-xxl-4">
             @forelse ($seriesInfo->episodes as $episode)
-                <article class="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-                    <div class="flex items-start justify-between gap-3">
-                        <h3 class="font-semibold text-slate-100">
-                            @if ($episode->episode_number)
-                                Épisode {{ $episode->episode_number }} —
+                @php
+                    $playableServer = $episode->servers->first(fn ($server): bool => (string) $server->final_url !== '');
+                    $playableUrl = $playableServer?->final_url;
+                @endphp
+
+                <div class="col">
+                    @if ($playableUrl)
+                        <a href="{{ $playableUrl }}" target="_blank" class="text-decoration-none d-block h-100">
+                    @endif
+
+                    <article class="card h-100 border-0 shadow-sm bg-dark text-light {{ $playableUrl ? 'cursor-pointer' : '' }}">
+                        <div class="ratio ratio-16x9 bg-black position-relative">
+                            @if ($episode->image_url)
+                                <img
+                                    src="{{ $episode->image_url }}"
+                                    alt="Image épisode {{ $episode->episode_number ?: '' }}"
+                                    class="w-100 h-100 object-fit-cover"
+                                    loading="lazy"
+                                >
+                            @elseif ($seriesInfo->cover_image_url)
+                                <img
+                                    src="{{ $seriesInfo->cover_image_url }}"
+                                    alt="Image de remplacement"
+                                    class="w-100 h-100 object-fit-cover opacity-75"
+                                    loading="lazy"
+                                >
+                            @else
+                                <div class="d-flex align-items-center justify-content-center text-secondary">Pas d'image</div>
                             @endif
-                            {{ $episode->title }}
-                        </h3>
-                        <a href="{{ $episode->page_url }}" target="_blank" class="text-xs text-indigo-300 hover:text-indigo-200">Ouvrir</a>
-                    </div>
-                    <p class="mt-2 break-all text-xs text-slate-400">{{ $episode->page_url }}</p>
-                </article>
+
+                            @if ($episode->episode_number)
+                                <span class="badge text-bg-danger position-absolute top-0 start-0 m-2 px-3 py-2">
+                                    Épisode {{ $episode->episode_number }}
+                                </span>
+                            @endif
+                        </div>
+
+                        <div class="card-body">
+                            <h3 class="h6 card-title mb-2">{{ $episode->title }}</h3>
+                            <p class="small mb-0 {{ $playableUrl ? 'text-info' : 'text-secondary' }}">
+                                {{ $playableUrl ? 'Lire maintenant' : 'Lien final indisponible' }}
+                            </p>
+                        </div>
+                    </article>
+
+                    @if ($playableUrl)
+                        </a>
+                    @endif
+                </div>
             @empty
-                <p class="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-slate-400">Aucun épisode lié à cette série.</p>
+                <p class="rounded-3 border border-secondary-subtle bg-dark-subtle p-4 text-secondary">Aucun épisode lié à cette série.</p>
             @endforelse
         </div>
     </section>

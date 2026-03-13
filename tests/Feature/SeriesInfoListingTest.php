@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Episode;
+use App\Models\EpisodeServer;
 use App\Models\SeriesInfo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -58,5 +59,36 @@ class SeriesInfoListingTest extends TestCase
         $response->assertOk();
         $response->assertSee('Episode 1');
         $response->assertDontSee('Other Episode');
+    }
+
+    public function test_series_info_page_links_episode_card_to_final_url(): void
+    {
+        $seriesInfo = SeriesInfo::query()->create([
+            'source_episode_page_url' => 'https://example.com/serie-3/episode-1/see/',
+            'series_page_url' => 'https://example.com/serie-3',
+            'title' => 'Serie Three',
+        ]);
+
+        $episode = Episode::query()->create([
+            'series_info_id' => $seriesInfo->id,
+            'title' => 'Episode Final',
+            'page_url' => 'https://example.com/serie-3/episode-1/see/',
+            'episode_number' => 1,
+        ]);
+
+        EpisodeServer::query()->create([
+            'episode_id' => $episode->id,
+            'server_name' => 'Main Server',
+            'host' => 'vdesk',
+            'server_page_url' => 'https://example.com/server/1',
+            'final_url' => 'https://stream.example.com/final-episode-1',
+            'status' => EpisodeServer::STATUS_DONE,
+        ]);
+
+        $response = $this->get(route('series-infos.show', $seriesInfo));
+
+        $response->assertOk();
+        $response->assertSee('https://stream.example.com/final-episode-1');
+        $response->assertSee('Lire maintenant');
     }
 }

@@ -23,9 +23,16 @@ class SeriesInfoController extends Controller
 
     public function show(SeriesInfo $seriesInfo): View
     {
-        $seriesInfo->load(['episodes' => function ($query): void {
-            $query->orderBy('episode_number')->orderBy('id');
-        }]);
+        $seriesInfo->load([
+            'episodes' => function ($query): void {
+                $query
+                    ->with(['servers' => function ($serverQuery): void {
+                        $serverQuery->orderByDesc('id');
+                    }])
+                    ->orderBy('episode_number')
+                    ->orderBy('id');
+            },
+        ]);
 
         return view('series_infos.show', [
             'seriesInfo' => $seriesInfo,
