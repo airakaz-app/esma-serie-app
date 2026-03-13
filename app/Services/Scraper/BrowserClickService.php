@@ -2,12 +2,15 @@
 
 namespace App\Services\Scraper;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Arr;
 use RuntimeException;
 
 class BrowserClickService
 {
+    private bool $attemptedDriverStart = false;
+
     public function __construct(private readonly Factory $http)
     {
     }
@@ -20,6 +23,8 @@ class BrowserClickService
         $sessionId = null;
 
         try {
+            $this->ensureWebDriverIsReachable();
+
             $sessionId = $this->createSession();
             $this->navigate($sessionId, $iframeUrl);
             $this->waitForReady($sessionId);
@@ -65,6 +70,73 @@ class BrowserClickService
             'result_h1' => $h1 ? trim($h1) : null,
             'result_preview' => mb_substr($text, 0, 400),
         ];
+    }
+
+    private function ensureWebDriverIsReachable(): void
+    {
+        if ($this->isWebDriverReachable()) {
+            return;
+        }
+
+        if ((bool) config('scraper.webdriver_autostart', false)) {
+            $this->startLocalWebDriver();
+
+            if ($this->isWebDriverReachable()) {
+                return;
+            }
+        }
+
+        throw new RuntimeException(
+            sprintf(
+                'WebDriver indisponible sur %s. Démarrez Selenium/Chromedriver ou activez SCRAPER_WEBDRIVER_AUTOSTART.',
+                (string) config('scraper.webdriver_url', 'http://127.0.0.1:9515')
+            )
+        );
+    }
+
+    private function isWebDriverReachable(): bool
+    {
+        try {
+            $response = $this->client()->get('/status');
+
+            return $response->successful();
+        } catch (ConnectionException) {
+            return false;
+        }
+    }
+
+    private function startLocalWebDriver(): void
+    {
+        if ($this->attemptedDriverStart) {
+            return;
+        }
+
+        $this->attemptedDriverStart = true;
+
+        $binary = (string) config('scraper.webdriver_binary', 'chromedriver');
+        $baseUrl = (string) config('scraper.webdriver_url', 'http://127.0.0.1:9515');
+        $parts = parse_url($baseUrl);
+        $port = (int) ($parts['port'] ?? 9515);
+        $host = (string) ($parts['host'] ?? '127.0.0.1');
+
+        $command = sprintf(
+            '%s --port=%d --allowed-ips="" --allowed-origins="*" --url-base=/ >/dev/null 2>&1 &',
+            escapeshellcmd($binary),
+            $port,
+        );
+
+        exec($command);
+
+        $deadline = microtime(true) + (float) config('scraper.webdriver_boot_timeout', 8);
+        while (microtime(true) < $deadline) {
+            if ($this->isWebDriverReachable()) {
+                return;
+            }
+
+            usleep(250_000);
+        }
+
+        throw new RuntimeException(sprintf('WebDriver démarrage auto échoué (%s @ %s:%d).', $binary, $host, $port));
     }
 
     private function createSession(): string

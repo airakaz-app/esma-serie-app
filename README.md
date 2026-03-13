@@ -81,6 +81,9 @@ Variables disponibles :
 - `SCRAPER_MAX_RETRIES` (défaut `3`)
 - `SCRAPER_HEADLESS` (`true` / `false`)
 - `SCRAPER_WEBDRIVER_URL` (défaut `http://127.0.0.1:9515`)
+- `SCRAPER_WEBDRIVER_AUTOSTART` (`true` / `false`, défaut `false`)
+- `SCRAPER_WEBDRIVER_BINARY` (défaut `chromedriver`)
+- `SCRAPER_WEBDRIVER_BOOT_TIMEOUT` (secondes, défaut `8`)
 - `SCRAPER_ALLOWED_HOSTS` (CSV, défaut `vdesk`)
 
 ## Lancement
@@ -115,3 +118,19 @@ Le système est conçu pour reprendre proprement :
 - Le script Python racine est utilisé comme **référence métier** (sélecteurs/ordre du flux), mais l'implémentation est Laravel-first.
 - Aucun stockage JSON/Excel n'est utilisé.
 - Toute la progression est persistée en SQL.
+
+## Dépannage WebDriver
+
+Si vous obtenez `cURL error 7 ... 127.0.0.1:9515/session`, cela signifie que le service WebDriver n'est pas démarré ou pas joignable à l'URL configurée.
+
+Solutions :
+
+1. Démarrer manuellement un WebDriver (Selenium/Chromedriver) et vérifier `SCRAPER_WEBDRIVER_URL`.
+2. Ou activer l'auto-démarrage local :
+
+```env
+SCRAPER_WEBDRIVER_AUTOSTART=true
+SCRAPER_WEBDRIVER_BINARY=chromedriver
+```
+
+Dans ce mode, le scraper teste `/status`, tente de lancer `chromedriver` en arrière-plan, puis réessaie avant d'échouer avec un message explicite.
