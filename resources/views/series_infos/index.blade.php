@@ -18,6 +18,20 @@
     @else
         <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
             @foreach ($seriesInfos as $seriesInfo)
+                @php
+                    $categories = collect($seriesInfo->categories)
+                        ->flatten(1)
+                        ->filter(fn ($value): bool => is_scalar($value) && (string) $value !== '')
+                        ->map(fn ($value): string => (string) $value)
+                        ->values();
+
+                    $actors = collect($seriesInfo->actors)
+                        ->flatten(1)
+                        ->filter(fn ($value): bool => is_scalar($value) && (string) $value !== '')
+                        ->map(fn ($value): string => (string) $value)
+                        ->values();
+                @endphp
+
                 <a
                     href="{{ route('series-infos.show', $seriesInfo) }}"
                     class="group overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400/80 hover:shadow-indigo-950/30"
@@ -57,12 +71,12 @@
                                 </p>
                             @endif
 
-                            @if (is_array($seriesInfo->categories) && count($seriesInfo->categories) > 0)
-                                <p class="line-clamp-1">Catégories: <span class="text-slate-300">{{ implode(', ', $seriesInfo->categories) }}</span></p>
+                            @if ($categories->isNotEmpty())
+                                <p class="line-clamp-1">Catégories: <span class="text-slate-300">{{ $categories->implode(', ') }}</span></p>
                             @endif
 
-                            @if (is_array($seriesInfo->actors) && count($seriesInfo->actors) > 0)
-                                <p class="line-clamp-1">Acteurs: <span class="text-slate-300">{{ implode(', ', $seriesInfo->actors) }}</span></p>
+                            @if ($actors->isNotEmpty())
+                                <p class="line-clamp-1">Acteurs: <span class="text-slate-300">{{ $actors->implode(', ') }}</span></p>
                             @endif
                         </div>
 
