@@ -49,18 +49,11 @@
 
                     <article class="card h-100 border-0 shadow-sm bg-dark text-light {{ $playableUrl ? 'cursor-pointer' : '' }}">
                         <div class="ratio ratio-16x9 bg-black position-relative">
-                            @if ($episode->image_url)
-                                <img
-                                    src="{{ $episode->image_url }}"
-                                    alt="Image épisode {{ $episode->episode_number ?: '' }}"
-                                    class="w-100 h-100 object-fit-cover"
-                                    loading="lazy"
-                                >
-                            @elseif ($seriesInfo->cover_image_url)
+                            @if ($seriesInfo->cover_image_url)
                                 <img
                                     src="{{ $seriesInfo->cover_image_url }}"
-                                    alt="Image de remplacement"
-                                    class="w-100 h-100 object-fit-cover opacity-75"
+                                    alt="Image série {{ $seriesInfo->title ?: 'série' }}"
+                                    class="w-100 h-100 object-fit-cover"
                                     loading="lazy"
                                 >
                             @else
