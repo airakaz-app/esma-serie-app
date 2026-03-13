@@ -8,12 +8,27 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 class BrowserClickService
 {
     private bool $attemptedDriverStart = false;
 
     private ?string $activeWebDriverUrl = null;
+
+    private ?string $cachedWebDriverError = null;
+
+    /**
+     * @var array<int, Process>
+     */
+    private array $startedWebDriverProcesses = [];
+
+    /**
+     * @var array<int, string>|null
+     */
+    private ?array $resolvedPythonCommand = null;
+
+    private ?string $cachedPythonResolutionError = null;
 
     public function __construct(private readonly Factory $http)
     {
@@ -24,6 +39,25 @@ class BrowserClickService
      */
     public function resolveDownloadUrl(string $iframeUrl): array
     {
+        $strategy = (string) config('scraper.browser_strategy', 'auto');
+
+        if (in_array($strategy, ['python', 'auto'], true)) {
+            $pythonResult = $this->resolveWithPythonBridge($iframeUrl);
+
+            if ($pythonResult['success']) {
+                return $pythonResult;
+            }
+
+            if ($strategy === 'python') {
+                return $pythonResult;
+            }
+
+            Log::warning('Fallback vers WebDriver HTTP après échec Python bridge.', [
+                'iframe_url' => $iframeUrl,
+                'python_error' => $pythonResult['error'],
+            ]);
+        }
+
         $sessionId = null;
 
         try {
@@ -71,6 +105,139 @@ class BrowserClickService
         }
     }
 
+    /**
+     * @return array{success:bool,final_url:?string,final_html:?string,error:?string}
+     */
+    private function resolveWithPythonBridge(string $iframeUrl): array
+    {
+        $scriptPath = base_path((string) config('scraper.python_script', 'browser_click.py'));
+
+        if (! is_file($scriptPath)) {
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => null,
+                'error' => "Script Python introuvable: {$scriptPath}",
+            ];
+        }
+
+        $pythonCommand = $this->resolvePythonCommand();
+        if ($pythonCommand === null) {
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => null,
+                'error' => $this->cachedPythonResolutionError,
+            ];
+        }
+
+        $process = new Process([
+            ...$pythonCommand,
+            $scriptPath,
+            '--iframe-url',
+            $iframeUrl,
+            '--timeout',
+            (string) config('scraper.browser_timeout', 30),
+            '--headless',
+            config('scraper.headless', true) ? '1' : '0',
+        ], base_path());
+
+        $process->setTimeout((int) config('scraper.python_timeout', 60));
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            $error = trim($process->getErrorOutput()) ?: trim($process->getOutput());
+
+            Log::warning('Bridge Python Selenium en échec', [
+                'iframe_url' => $iframeUrl,
+                'python_command' => implode(' ', $pythonCommand),
+                'error' => $error,
+            ]);
+
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => null,
+                'error' => $error !== '' ? $error : 'Le processus Python a échoué.',
+            ];
+        }
+
+        $decoded = json_decode($process->getOutput(), true);
+
+        if (! is_array($decoded)) {
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => null,
+                'error' => 'Réponse JSON invalide depuis la bridge Python.',
+            ];
+        }
+
+        return [
+            'success' => (bool) ($decoded['success'] ?? false),
+            'final_url' => isset($decoded['final_url']) ? (string) $decoded['final_url'] : null,
+            'final_html' => isset($decoded['final_html']) ? (string) $decoded['final_html'] : null,
+            'error' => isset($decoded['error']) && is_string($decoded['error']) && $decoded['error'] !== '' ? $decoded['error'] : null,
+        ];
+    }
+
+    /**
+     * @return array<int, string>|null
+     */
+    private function resolvePythonCommand(): ?array
+    {
+        if ($this->resolvedPythonCommand !== null) {
+            return $this->resolvedPythonCommand;
+        }
+
+        $candidateCommands = collect([
+            (string) config('scraper.python_binary', 'python3'),
+            ...config('scraper.python_candidates', []),
+        ])
+            ->map(fn (string $command): string => trim($command))
+            ->filter(fn (string $command): bool => $command !== '')
+            ->unique()
+            ->values();
+
+        $errors = [];
+
+        foreach ($candidateCommands as $candidateCommand) {
+            $candidateArgs = preg_split('/\s+/', $candidateCommand) ?: [];
+            if ($candidateArgs === []) {
+                continue;
+            }
+
+            $versionProcess = new Process([
+                ...$candidateArgs,
+                '--version',
+            ], base_path());
+
+            $versionProcess->setTimeout(8);
+            $versionProcess->run();
+
+            if ($versionProcess->isSuccessful()) {
+                $this->resolvedPythonCommand = $candidateArgs;
+
+                Log::info('Commande Python détectée.', [
+                    'command' => implode(' ', $candidateArgs),
+                    'version' => trim($versionProcess->getOutput() ?: $versionProcess->getErrorOutput()),
+                ]);
+
+                return $this->resolvedPythonCommand;
+            }
+
+            $error = trim($versionProcess->getErrorOutput()) ?: trim($versionProcess->getOutput());
+            $errors[] = sprintf('%s => %s', $candidateCommand, $error !== '' ? $error : 'indisponible');
+        }
+
+        $this->cachedPythonResolutionError = sprintf(
+            'Aucun interpréteur Python utilisable. Commandes testées: %s. Configurez SCRAPER_PYTHON_CANDIDATES (ex: "py -3,python,python3") ou SCRAPER_BROWSER_STRATEGY=webdriver.',
+            implode(' | ', $errors)
+        );
+
+        return null;
+    }
+
     public function summarizeHtml(string $html): array
     {
         $dom = new \DOMDocument();
@@ -89,6 +256,14 @@ class BrowserClickService
 
     private function ensureWebDriverIsReachable(): void
     {
+        if ($this->activeWebDriverUrl !== null) {
+            return;
+        }
+
+        if ($this->cachedWebDriverError !== null) {
+            throw new RuntimeException($this->cachedWebDriverError);
+        }
+
         $candidates = $this->candidateWebDriverUrls();
         Log::info('Test disponibilité WebDriver', ['urls' => $candidates]);
 
@@ -114,12 +289,12 @@ class BrowserClickService
             }
         }
 
-        throw new RuntimeException(
-            sprintf(
-                'WebDriver indisponible. URLs testées: %s. Lancez Selenium/Chromedriver, ou vérifiez SCRAPER_WEBDRIVER_URL / SCRAPER_WEBDRIVER_BINARY.',
-                implode(', ', $candidates)
-            )
+        $this->cachedWebDriverError = sprintf(
+            'WebDriver indisponible. URLs testées: %s. Lancez Selenium/Chromedriver, ou vérifiez SCRAPER_WEBDRIVER_URL / SCRAPER_WEBDRIVER_BINARY.',
+            implode(', ', $candidates)
         );
+
+        throw new RuntimeException($this->cachedWebDriverError);
     }
 
     /**
@@ -181,23 +356,20 @@ class BrowserClickService
         Log::info('Tentative auto-start WebDriver', [
             'port' => $port,
             'binaries' => $binaryCandidates,
-            'which_chromedriver' => trim((string) shell_exec('command -v chromedriver 2>/dev/null')),
-            'which_chromium_driver' => trim((string) shell_exec('command -v chromium-driver 2>/dev/null')),
         ]);
 
         foreach ($binaryCandidates as $binary) {
-            $command = sprintf(
-                '%s --port=%d --allowed-ips="" --allowed-origins="*" --url-base=/ >/tmp/scraper-chromedriver.log 2>&1 & echo $!',
-                escapeshellcmd($binary),
-                $port,
-            );
+            $process = new Process([
+                $binary,
+                "--port={$port}",
+            ], base_path());
 
-            $pid = trim((string) shell_exec($command));
+            $process->start();
+            $this->startedWebDriverProcesses[] = $process;
 
-            Log::info('Commande auto-start exécutée', [
+            Log::info('Process auto-start WebDriver lancé', [
                 'binary' => $binary,
-                'command' => $command,
-                'pid' => $pid,
+                'pid' => $process->getPid(),
             ]);
 
             $deadline = microtime(true) + (float) config('scraper.webdriver_boot_timeout', 8);
@@ -207,7 +379,7 @@ class BrowserClickService
                         $this->activeWebDriverUrl = $candidateUrl;
                         Log::info('Auto-start WebDriver réussi', [
                             'binary' => $binary,
-                            'pid' => $pid,
+                            'pid' => $process->getPid(),
                             'webdriver_url' => $candidateUrl,
                         ]);
 
@@ -218,16 +390,21 @@ class BrowserClickService
                 usleep(250_000);
             }
 
+            $output = trim($process->getErrorOutput()) ?: trim($process->getOutput());
             Log::warning('Auto-start échoué pour binaire', [
                 'binary' => $binary,
-                'pid' => $pid,
-                'chromedriver_log_tail' => trim((string) shell_exec('tail -n 30 /tmp/scraper-chromedriver.log 2>/dev/null')),
+                'pid' => $process->getPid(),
+                'output' => mb_substr($output, 0, 600),
             ]);
+
+            if ($process->isRunning()) {
+                $process->stop(1);
+            }
         }
 
         throw new RuntimeException(
             sprintf(
-                'Échec auto-démarrage WebDriver. Binaires testés: %s. Consultez /tmp/scraper-chromedriver.log',
+                'Échec auto-démarrage WebDriver. Binaires testés: %s.',
                 implode(', ', $binaryCandidates)
             )
         );
