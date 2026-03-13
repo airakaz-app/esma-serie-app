@@ -6,6 +6,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class BrowserClickService
@@ -28,6 +29,11 @@ class BrowserClickService
         try {
             $this->ensureWebDriverIsReachable();
 
+            Log::info('WebDriver prêt, démarrage session scraping.', [
+                'webdriver_url' => $this->activeWebDriverUrl,
+                'iframe_url' => $iframeUrl,
+            ]);
+
             $sessionId = $this->createSession();
             $this->navigate($sessionId, $iframeUrl);
             $this->waitForReady($sessionId);
@@ -46,6 +52,12 @@ class BrowserClickService
                 'error' => null,
             ];
         } catch (\Throwable $e) {
+            Log::error('Erreur BrowserClickService::resolveDownloadUrl', [
+                'iframe_url' => $iframeUrl,
+                'webdriver_url' => $this->activeWebDriverUrl,
+                'error' => $e->getMessage(),
+            ]);
+
             return [
                 'success' => false,
                 'final_url' => null,
@@ -77,9 +89,13 @@ class BrowserClickService
 
     private function ensureWebDriverIsReachable(): void
     {
-        foreach ($this->candidateWebDriverUrls() as $candidateUrl) {
+        $candidates = $this->candidateWebDriverUrls();
+        Log::info('Test disponibilité WebDriver', ['urls' => $candidates]);
+
+        foreach ($candidates as $candidateUrl) {
             if ($this->isWebDriverReachable($candidateUrl)) {
                 $this->activeWebDriverUrl = $candidateUrl;
+                Log::info('WebDriver détecté.', ['webdriver_url' => $candidateUrl]);
 
                 return;
             }
@@ -88,9 +104,10 @@ class BrowserClickService
         if ((bool) config('scraper.webdriver_autostart', true)) {
             $this->startLocalWebDriver();
 
-            foreach ($this->candidateWebDriverUrls() as $candidateUrl) {
+            foreach ($candidates as $candidateUrl) {
                 if ($this->isWebDriverReachable($candidateUrl)) {
                     $this->activeWebDriverUrl = $candidateUrl;
+                    Log::info('WebDriver détecté après auto-start.', ['webdriver_url' => $candidateUrl]);
 
                     return;
                 }
@@ -100,7 +117,7 @@ class BrowserClickService
         throw new RuntimeException(
             sprintf(
                 'WebDriver indisponible. URLs testées: %s. Lancez Selenium/Chromedriver, ou vérifiez SCRAPER_WEBDRIVER_URL / SCRAPER_WEBDRIVER_BINARY.',
-                implode(', ', $this->candidateWebDriverUrls())
+                implode(', ', $candidates)
             )
         );
     }
@@ -127,8 +144,23 @@ class BrowserClickService
         try {
             $response = $this->client($baseUrl)->get('/status');
 
-            return $response->successful();
-        } catch (ConnectionException) {
+            if ($response->successful()) {
+                return true;
+            }
+
+            Log::warning('WebDriver /status non successful', [
+                'webdriver_url' => $baseUrl,
+                'http_status' => $response->status(),
+                'body' => mb_substr((string) $response->body(), 0, 400),
+            ]);
+
+            return false;
+        } catch (ConnectionException $e) {
+            Log::warning('WebDriver non joignable', [
+                'webdriver_url' => $baseUrl,
+                'error' => $e->getMessage(),
+            ]);
+
             return false;
         }
     }
@@ -136,46 +168,69 @@ class BrowserClickService
     private function startLocalWebDriver(): void
     {
         if ($this->attemptedDriverStart) {
+            Log::info('Auto-start WebDriver déjà tenté, pas de nouvelle tentative.');
+
             return;
         }
 
         $this->attemptedDriverStart = true;
 
         $binaryCandidates = $this->binaryCandidates();
-        $started = false;
+        $port = $this->extractPortFromPrimaryUrl();
+
+        Log::info('Tentative auto-start WebDriver', [
+            'port' => $port,
+            'binaries' => $binaryCandidates,
+            'which_chromedriver' => trim((string) shell_exec('command -v chromedriver 2>/dev/null')),
+            'which_chromium_driver' => trim((string) shell_exec('command -v chromium-driver 2>/dev/null')),
+        ]);
 
         foreach ($binaryCandidates as $binary) {
-            $port = $this->extractPortFromPrimaryUrl();
             $command = sprintf(
-                '%s --port=%d --allowed-ips="" --allowed-origins="*" --url-base=/ >/dev/null 2>&1 &',
+                '%s --port=%d --allowed-ips="" --allowed-origins="*" --url-base=/ >/tmp/scraper-chromedriver.log 2>&1 & echo $!',
                 escapeshellcmd($binary),
                 $port,
             );
 
-            exec($command);
+            $pid = trim((string) shell_exec($command));
+
+            Log::info('Commande auto-start exécutée', [
+                'binary' => $binary,
+                'command' => $command,
+                'pid' => $pid,
+            ]);
 
             $deadline = microtime(true) + (float) config('scraper.webdriver_boot_timeout', 8);
             while (microtime(true) < $deadline) {
                 foreach ($this->candidateWebDriverUrls() as $candidateUrl) {
                     if ($this->isWebDriverReachable($candidateUrl)) {
-                        $started = true;
                         $this->activeWebDriverUrl = $candidateUrl;
-                        break 2;
+                        Log::info('Auto-start WebDriver réussi', [
+                            'binary' => $binary,
+                            'pid' => $pid,
+                            'webdriver_url' => $candidateUrl,
+                        ]);
+
+                        return;
                     }
                 }
 
                 usleep(250_000);
             }
+
+            Log::warning('Auto-start échoué pour binaire', [
+                'binary' => $binary,
+                'pid' => $pid,
+                'chromedriver_log_tail' => trim((string) shell_exec('tail -n 30 /tmp/scraper-chromedriver.log 2>/dev/null')),
+            ]);
         }
 
-        if (! $started) {
-            throw new RuntimeException(
-                sprintf(
-                    'Échec auto-démarrage WebDriver. Binaires testés: %s',
-                    implode(', ', $binaryCandidates)
-                )
-            );
-        }
+        throw new RuntimeException(
+            sprintf(
+                'Échec auto-démarrage WebDriver. Binaires testés: %s. Consultez /tmp/scraper-chromedriver.log',
+                implode(', ', $binaryCandidates)
+            )
+        );
     }
 
     /**

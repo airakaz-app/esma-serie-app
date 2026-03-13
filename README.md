@@ -135,3 +135,6 @@ SCRAPER_WEBDRIVER_BINARY=chromedriver
 ```
 
 Le scraper teste automatiquement plusieurs endpoints WebDriver (`9515`, `4444`, `4444/wd/hub` + URL configurée), puis tente de lancer `chromedriver` si activé, avant d'échouer avec un message détaillant toutes les URLs testées.
+
+
+En cas d'échec d'auto-démarrage, consultez aussi `/tmp/scraper-chromedriver.log` et `storage/logs/laravel.log` pour le détail des tentatives (URLs testées, binaires, erreurs réseau, PID lancé).
