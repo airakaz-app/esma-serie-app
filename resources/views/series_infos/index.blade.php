@@ -196,7 +196,7 @@
 
     const startPolling = (trackingKey) => {
         const poll = async () => {
-            const response = await fetch(`{{ url('/series-infos/scrape-status') }}/${trackingKey}`, {
+            const response = await fetch(`{{ route('series-infos.scrape-status', ['trackingKey' => '__TRACKING_KEY__']) }}`.replace('__TRACKING_KEY__', trackingKey), {
                 headers: {
                     'Accept': 'application/json',
                 },
