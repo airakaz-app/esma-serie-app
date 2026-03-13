@@ -1,0 +1,255 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Episode;
+use App\Models\EpisodeServer;
+use App\Services\Scraper\BrowserClickService;
+use App\Services\Scraper\EpisodeListScraper;
+use App\Services\Scraper\EpisodePageScraper;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
+
+class ScrapeEpisodesCommand extends Command
+{
+    protected $signature = 'scrape:episodes
+        {--limit= : Nombre max de serveurs à traiter}
+        {--episode-id= : Traiter un seul épisode}
+        {--retry-errors : Rejouer les statuts error}
+        {--only-pending : Traiter uniquement les statuts pending}';
+
+    protected $description = 'Scrape automatiquement les épisodes, serveurs et URLs finales.';
+
+    public function __construct(
+        private readonly EpisodeListScraper $listScraper,
+        private readonly EpisodePageScraper $pageScraper,
+        private readonly BrowserClickService $browser,
+    ) {
+        parent::__construct();
+    }
+
+    public function handle(): int
+    {
+        $listUrl = (string) config('scraper.list_page_url');
+        if ($listUrl === '' && ! $this->option('episode-id')) {
+            $this->error('SCRAPER_LIST_PAGE_URL est vide.');
+
+            return self::FAILURE;
+        }
+
+        $this->scanEpisodes($listUrl);
+
+        $serversProcessed = 0;
+        $limit = $this->option('limit') ? (int) $this->option('limit') : null;
+
+        $episodes = $this->episodeQuery()->get();
+        $this->info(sprintf('Épisodes à traiter: %d', $episodes->count()));
+
+        foreach ($episodes as $episode) {
+            $this->line("- Épisode #{$episode->id}: {$episode->title}");
+            $this->processEpisode($episode, $serversProcessed, $limit);
+
+            if ($limit !== null && $serversProcessed >= $limit) {
+                $this->warn('Limite atteinte, arrêt propre.');
+                break;
+            }
+        }
+
+        return self::SUCCESS;
+    }
+
+    private function scanEpisodes(string $listUrl): void
+    {
+        if ($this->option('episode-id')) {
+            return;
+        }
+
+        $this->info('Scan page liste...');
+
+        try {
+            $episodes = $this->listScraper->scrape($listUrl);
+
+            foreach ($episodes as $episodeData) {
+                Episode::query()->updateOrCreate(
+                    ['page_url' => $episodeData['page_url']],
+                    ['title' => $episodeData['title']],
+                );
+            }
+
+            $this->info(sprintf('Épisodes détectés: %d', count($episodes)));
+        } catch (\Throwable $e) {
+            Log::error('Erreur scan liste épisodes', ['error' => $e->getMessage()]);
+            $this->error('Erreur pendant le scan liste: '.$e->getMessage());
+        }
+    }
+
+    private function episodeQuery()
+    {
+        $query = Episode::query()->orderBy('id');
+
+        if ($episodeId = $this->option('episode-id')) {
+            $query->whereKey((int) $episodeId);
+        } else {
+            $query->where('status', '!=', Episode::STATUS_DONE);
+        }
+
+        if ($this->option('only-pending')) {
+            $query->where('status', Episode::STATUS_PENDING);
+        }
+
+        if (! $this->option('retry-errors')) {
+            $query->where('status', '!=', Episode::STATUS_ERROR);
+        }
+
+        return $query;
+    }
+
+    private function processEpisode(Episode $episode, int &$serversProcessed, ?int $limit): void
+    {
+        $episode->forceFill([
+            'status' => Episode::STATUS_IN_PROGRESS,
+            'error_message' => null,
+            'last_scraped_at' => now(),
+        ])->save();
+
+        try {
+            $servers = $this->pageScraper->extractServers($episode->page_url);
+
+            foreach ($servers as $serverData) {
+                EpisodeServer::query()->updateOrCreate(
+                    ['server_page_url' => $serverData['server_page_url']],
+                    [
+                        'episode_id' => $episode->id,
+                        'server_name' => $serverData['server_name'],
+                        'host' => $serverData['host'],
+                    ],
+                );
+            }
+
+            $serverQuery = $episode->servers()->orderBy('id');
+
+            if ($this->option('only-pending')) {
+                $serverQuery->where('status', EpisodeServer::STATUS_PENDING);
+            } elseif (! $this->option('retry-errors')) {
+                $serverQuery->where('status', '!=', EpisodeServer::STATUS_DONE)
+                    ->where('status', '!=', EpisodeServer::STATUS_ERROR);
+            } else {
+                $serverQuery->where('status', '!=', EpisodeServer::STATUS_DONE);
+            }
+
+            foreach ($serverQuery->get() as $server) {
+                if ($limit !== null && $serversProcessed >= $limit) {
+                    break;
+                }
+
+                $this->processServer($server);
+                $serversProcessed++;
+            }
+
+            $this->refreshEpisodeStatus($episode);
+        } catch (\Throwable $e) {
+            $episode->forceFill([
+                'status' => Episode::STATUS_ERROR,
+                'error_message' => $e->getMessage(),
+                'last_scraped_at' => now(),
+            ])->save();
+
+            Log::error('Erreur traitement épisode', [
+                'episode_id' => $episode->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function processServer(EpisodeServer $server): void
+    {
+        if ($server->status === EpisodeServer::STATUS_DONE) {
+            return;
+        }
+
+        $maxRetries = (int) config('scraper.max_retries', 3);
+        if (! $this->option('retry-errors') && $server->retry_count >= $maxRetries) {
+            $this->warn("  Serveur #{$server->id} ignoré: retry max atteint.");
+
+            return;
+        }
+
+        $this->line("  Serveur #{$server->id} {$server->server_name} ({$server->host})");
+
+        $server->forceFill([
+            'status' => EpisodeServer::STATUS_IN_PROGRESS,
+            'error_message' => null,
+            'last_scraped_at' => now(),
+        ])->save();
+
+        try {
+            if (! $server->iframe_url) {
+                $server->iframe_url = $this->pageScraper->extractIframeUrl($server->server_page_url);
+                $server->save();
+            }
+
+            if (! $server->iframe_url) {
+                throw new \RuntimeException('Iframe introuvable');
+            }
+
+            if (! $server->final_url) {
+                $browserResult = $this->browser->resolveDownloadUrl($server->iframe_url);
+
+                if (! $browserResult['success']) {
+                    throw new \RuntimeException((string) ($browserResult['error'] ?? 'Erreur browser'));
+                }
+
+                $summary = $this->browser->summarizeHtml((string) ($browserResult['final_html'] ?? ''));
+
+                $server->forceFill([
+                    'click_success' => true,
+                    'final_url' => $browserResult['final_url'],
+                    'result_title' => $summary['result_title'],
+                    'result_h1' => $summary['result_h1'],
+                    'result_preview' => $summary['result_preview'],
+                    'status' => EpisodeServer::STATUS_DONE,
+                    'error_message' => null,
+                    'last_scraped_at' => now(),
+                ])->save();
+            } else {
+                $server->forceFill([
+                    'status' => EpisodeServer::STATUS_DONE,
+                    'last_scraped_at' => now(),
+                ])->save();
+            }
+        } catch (\Throwable $e) {
+            $server->forceFill([
+                'status' => EpisodeServer::STATUS_ERROR,
+                'error_message' => $e->getMessage(),
+                'retry_count' => $server->retry_count + 1,
+                'last_scraped_at' => now(),
+            ])->save();
+
+            Log::error('Erreur traitement serveur', [
+                'server_id' => $server->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function refreshEpisodeStatus(Episode $episode): void
+    {
+        $states = $episode->servers()
+            ->selectRaw('status, count(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
+
+        if (($states[EpisodeServer::STATUS_DONE] ?? 0) > 0 && ($states[EpisodeServer::STATUS_DONE] ?? 0) === $episode->servers()->count()) {
+            $status = Episode::STATUS_DONE;
+        } elseif (($states[EpisodeServer::STATUS_ERROR] ?? 0) > 0 && ($states[EpisodeServer::STATUS_PENDING] ?? 0) === 0 && ($states[EpisodeServer::STATUS_IN_PROGRESS] ?? 0) === 0) {
+            $status = Episode::STATUS_ERROR;
+        } else {
+            $status = Episode::STATUS_IN_PROGRESS;
+        }
+
+        $episode->forceFill([
+            'status' => $status,
+            'last_scraped_at' => now(),
+        ])->save();
+    }
+}
