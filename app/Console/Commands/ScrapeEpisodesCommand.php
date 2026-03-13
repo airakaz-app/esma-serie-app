@@ -10,6 +10,7 @@ use App\Services\Scraper\EpisodeListScraper;
 use App\Services\Scraper\EpisodePageScraper;
 use App\Services\Scraper\SeriesInfoScraper;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class ScrapeEpisodesCommand extends Command
@@ -17,10 +18,22 @@ class ScrapeEpisodesCommand extends Command
     protected $signature = 'scrape:episodes
         {--limit= : Nombre max de serveurs à traiter}
         {--episode-id= : Traiter un seul épisode}
+        {--list-page-url= : URL de la page liste à scraper}
+        {--tracking-key= : Clé de suivi de progression}
         {--retry-errors : Rejouer les statuts error}
         {--only-pending : Traiter uniquement les statuts pending}';
 
     protected $description = 'Scrape automatiquement les épisodes, serveurs et URLs finales.';
+
+    private ?string $trackingKey = null;
+
+    private ?int $trackedSeriesInfoId = null;
+
+    private ?string $trackedSeriesInfoTitle = null;
+
+    private int $episodesTotal = 0;
+
+    private int $episodesProcessed = 0;
 
     public function __construct(
         private readonly EpisodeListScraper $listScraper,
@@ -33,9 +46,13 @@ class ScrapeEpisodesCommand extends Command
 
     public function handle(): int
     {
-        $listUrl = (string) config('scraper.list_page_url');
+        $this->trackingKey = $this->option('tracking-key') ? (string) $this->option('tracking-key') : null;
+        $this->updateTrackingStatus('running', 'Initialisation du scraping...');
+
+        $listUrl = (string) ($this->option('list-page-url') ?: config('scraper.list_page_url'));
         if ($listUrl === '' && ! $this->option('episode-id')) {
             $this->error('SCRAPER_LIST_PAGE_URL est vide.');
+            $this->updateTrackingStatus('error', 'URL de liste manquante.');
 
             return self::FAILURE;
         }
@@ -46,17 +63,24 @@ class ScrapeEpisodesCommand extends Command
         $limit = $this->option('limit') ? (int) $this->option('limit') : null;
 
         $episodes = $this->episodeQuery()->get();
-        $this->info(sprintf('Épisodes à traiter: %d', $episodes->count()));
+        $this->episodesTotal = $episodes->count();
+        $this->episodesProcessed = 0;
+        $this->info(sprintf('Épisodes à traiter: %d', $this->episodesTotal));
+        $this->updateTrackingStatus('running', 'Récupération des épisodes en cours...');
 
         foreach ($episodes as $episode) {
             $this->line("- Épisode #{$episode->id}: {$episode->title}");
             $this->processEpisode($episode, $serversProcessed, $limit);
+            $this->episodesProcessed++;
+            $this->updateTrackingStatus('running', 'Récupération des épisodes en cours...');
 
             if ($limit !== null && $serversProcessed >= $limit) {
                 $this->warn('Limite atteinte, arrêt propre.');
                 break;
             }
         }
+
+        $this->updateTrackingStatus('completed', 'Scraping terminé.');
 
         return self::SUCCESS;
     }
@@ -89,6 +113,7 @@ class ScrapeEpisodesCommand extends Command
         } catch (\Throwable $e) {
             Log::error('Erreur scan liste épisodes', ['error' => $e->getMessage()]);
             $this->error('Erreur pendant le scan liste: '.$e->getMessage());
+            $this->updateTrackingStatus('error', 'Erreur pendant le scan de la page liste.');
         }
     }
 
@@ -112,7 +137,6 @@ class ScrapeEpisodesCommand extends Command
 
         return $query;
     }
-
 
     /**
      * @param array<int, array{title:string,page_url:string,episode_number:?int,image_url:?string}> $episodes
@@ -143,6 +167,10 @@ class ScrapeEpisodesCommand extends Command
                     'actors' => $seriesInfo['actors'],
                 ],
             );
+
+            $this->trackedSeriesInfoId = $seriesInfoModel->id;
+            $this->trackedSeriesInfoTitle = $seriesInfoModel->title;
+            $this->updateTrackingStatus('running', 'Fiche série créée. Récupération des épisodes en cours...');
 
             $episodeUrls = collect($episodes)
                 ->pluck('page_url')
@@ -309,5 +337,31 @@ class ScrapeEpisodesCommand extends Command
             'status' => $status,
             'last_scraped_at' => now(),
         ])->save();
+    }
+
+    private function updateTrackingStatus(string $state, string $message): void
+    {
+        if ($this->trackingKey === null || $this->trackingKey === '') {
+            return;
+        }
+
+        $percent = $this->episodesTotal > 0
+            ? min(100, (int) round(($this->episodesProcessed / $this->episodesTotal) * 100))
+            : 0;
+
+        Cache::put($this->trackingCacheKey(), [
+            'state' => $state,
+            'message' => $message,
+            'episodesTotal' => $this->episodesTotal,
+            'episodesProcessed' => $this->episodesProcessed,
+            'progressPercent' => $percent,
+            'seriesInfoId' => $this->trackedSeriesInfoId,
+            'seriesInfoTitle' => $this->trackedSeriesInfoTitle,
+        ], now()->addHours(2));
+    }
+
+    private function trackingCacheKey(): string
+    {
+        return 'scrape_progress:'.$this->trackingKey;
     }
 }
