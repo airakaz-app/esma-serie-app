@@ -4,9 +4,11 @@ namespace App\Console\Commands;
 
 use App\Models\Episode;
 use App\Models\EpisodeServer;
+use App\Models\SeriesInfo;
 use App\Services\Scraper\BrowserClickService;
 use App\Services\Scraper\EpisodeListScraper;
 use App\Services\Scraper\EpisodePageScraper;
+use App\Services\Scraper\SeriesInfoScraper;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -24,6 +26,7 @@ class ScrapeEpisodesCommand extends Command
         private readonly EpisodeListScraper $listScraper,
         private readonly EpisodePageScraper $pageScraper,
         private readonly BrowserClickService $browser,
+        private readonly SeriesInfoScraper $seriesInfoScraper,
     ) {
         parent::__construct();
     }
@@ -72,9 +75,15 @@ class ScrapeEpisodesCommand extends Command
             foreach ($episodes as $episodeData) {
                 Episode::query()->updateOrCreate(
                     ['page_url' => $episodeData['page_url']],
-                    ['title' => $episodeData['title']],
+                    [
+                        'title' => $episodeData['title'],
+                        'episode_number' => $episodeData['episode_number'] ?? null,
+                        'image_url' => $episodeData['image_url'] ?? null,
+                    ],
                 );
             }
+
+            $this->syncSeriesInfoFromEpisodes($episodes);
 
             $this->info(sprintf('Épisodes détectés: %d', count($episodes)));
         } catch (\Throwable $e) {
@@ -102,6 +111,49 @@ class ScrapeEpisodesCommand extends Command
         }
 
         return $query;
+    }
+
+
+    /**
+     * @param array<int, array{title:string,page_url:string,episode_number:?int,image_url:?string}> $episodes
+     */
+    private function syncSeriesInfoFromEpisodes(array $episodes): void
+    {
+        if ($episodes === []) {
+            return;
+        }
+
+        $firstEpisodeUrl = (string) ($episodes[0]['page_url'] ?? '');
+        if ($firstEpisodeUrl === '') {
+            return;
+        }
+
+        $exists = SeriesInfo::query()->where('source_episode_page_url', $firstEpisodeUrl)->exists();
+        if ($exists) {
+            return;
+        }
+
+        try {
+            $seriesInfo = $this->seriesInfoScraper->scrapeFromEpisodeUrl($firstEpisodeUrl);
+
+            SeriesInfo::query()->updateOrCreate(
+                ['source_episode_page_url' => $seriesInfo['source_episode_page_url']],
+                [
+                    'series_page_url' => $seriesInfo['series_page_url'],
+                    'title' => $seriesInfo['title'],
+                    'title_url' => $seriesInfo['title_url'],
+                    'cover_image_url' => $seriesInfo['cover_image_url'],
+                    'story' => $seriesInfo['story'],
+                    'categories' => $seriesInfo['categories'],
+                    'actors' => $seriesInfo['actors'],
+                ],
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Erreur récupération infos série', [
+                'source_episode_page_url' => $firstEpisodeUrl,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function processEpisode(Episode $episode, int &$serversProcessed, ?int $limit): void
