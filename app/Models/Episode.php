@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Episode extends Model
@@ -16,6 +17,7 @@ class Episode extends Model
     public const STATUS_ERROR = 'error';
 
     protected $fillable = [
+        'series_info_id',
         'title',
         'page_url',
         'episode_number',
@@ -31,6 +33,12 @@ class Episode extends Model
             'episode_number' => 'integer',
             'last_scraped_at' => 'datetime',
         ];
+    }
+
+
+    public function seriesInfo(): BelongsTo
+    {
+        return $this->belongsTo(SeriesInfo::class);
     }
 
     public function servers(): HasMany

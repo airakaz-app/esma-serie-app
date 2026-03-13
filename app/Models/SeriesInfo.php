@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SeriesInfo extends Model
 {
@@ -19,6 +20,11 @@ class SeriesInfo extends Model
         'categories',
         'actors',
     ];
+
+    public function episodes(): HasMany
+    {
+        return $this->hasMany(Episode::class);
+    }
 
     protected function casts(): array
     {
