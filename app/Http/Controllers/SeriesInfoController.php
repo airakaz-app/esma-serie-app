@@ -7,6 +7,8 @@ use App\Models\SeriesInfo;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 
 class SeriesInfoController extends Controller
 {
@@ -44,21 +46,38 @@ class SeriesInfoController extends Controller
 
     public function scrape(ScrapeSeriesInfoRequest $request): JsonResponse
     {
-        $latestSeriesInfoId = (int) (SeriesInfo::query()->max('id') ?? 0);
+        $trackingKey = (string) Str::uuid();
+        $listPageUrl = $request->string('list_page_url')->toString();
 
-        Artisan::call('scrape:episodes', [
-            '--list-page-url' => $request->string('list_page_url')->toString(),
-        ]);
-
-        $createdSeriesInfo = SeriesInfo::query()
-            ->where('id', '>', $latestSeriesInfoId)
-            ->orderByDesc('id')
-            ->first();
+        dispatch(function () use ($listPageUrl, $trackingKey): void {
+            Artisan::call('scrape:episodes', [
+                '--list-page-url' => $listPageUrl,
+                '--tracking-key' => $trackingKey,
+            ]);
+        })->afterResponse();
 
         return response()->json([
-            'created' => $createdSeriesInfo !== null,
-            'seriesInfoId' => $createdSeriesInfo?->id,
-            'seriesInfoTitle' => $createdSeriesInfo?->title,
+            'started' => true,
+            'trackingKey' => $trackingKey,
         ]);
+    }
+
+    public function scrapeStatus(string $trackingKey): JsonResponse
+    {
+        $status = Cache::get($this->trackingCacheKey($trackingKey));
+
+        if (! is_array($status)) {
+            return response()->json([
+                'state' => 'not_found',
+                'message' => 'Aucun scraping trouvé pour cette clé.',
+            ], 404);
+        }
+
+        return response()->json($status);
+    }
+
+    private function trackingCacheKey(string $trackingKey): string
+    {
+        return 'scrape_progress:'.$trackingKey;
     }
 }

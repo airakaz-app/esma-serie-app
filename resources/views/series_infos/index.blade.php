@@ -19,6 +19,16 @@
         <button type="button" id="openAddSeriesModal" class="btn btn-primary">Ajouter</button>
     </header>
 
+    <div id="globalScrapeProgress" class="alert alert-info d-none mb-4">
+        <div class="d-flex justify-content-between small mb-2">
+            <span id="globalScrapeMessage">Récupération des épisodes en cours...</span>
+            <span id="globalScrapePercent">0%</span>
+        </div>
+        <div class="progress" role="progressbar" aria-label="Progression du scraping">
+            <div id="globalScrapeBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+        </div>
+    </div>
+
     @if ($seriesInfos->isEmpty())
         <p class="rounded-3 border border-secondary-subtle bg-dark-subtle p-4 text-secondary">Aucune série trouvée.</p>
     @else
@@ -112,9 +122,19 @@
 
                 <div id="addSeriesError" class="alert alert-danger py-2 px-3 mb-0 d-none"></div>
 
+                <div id="modalScrapeProgress" class="d-none">
+                    <div class="d-flex justify-content-between small mb-2">
+                        <span id="modalScrapeMessage">Démarrage...</span>
+                        <span id="modalScrapePercent">0%</span>
+                    </div>
+                    <div class="progress" role="progressbar" aria-label="Progression du scraping">
+                        <div id="modalScrapeBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                    </div>
+                </div>
+
                 <button type="submit" class="btn btn-primary" id="submitAddSeriesBtn">
                     <span id="addSeriesSpinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
-                    Lancer
+                    Lancer le scraping
                 </button>
             </form>
         </div>
@@ -129,6 +149,16 @@
     const submitButton = document.getElementById('submitAddSeriesBtn');
     const spinnerElement = document.getElementById('addSeriesSpinner');
     const errorElement = document.getElementById('addSeriesError');
+    const modalScrapeProgress = document.getElementById('modalScrapeProgress');
+    const modalScrapeMessage = document.getElementById('modalScrapeMessage');
+    const modalScrapePercent = document.getElementById('modalScrapePercent');
+    const modalScrapeBar = document.getElementById('modalScrapeBar');
+    const globalScrapeProgress = document.getElementById('globalScrapeProgress');
+    const globalScrapeMessage = document.getElementById('globalScrapeMessage');
+    const globalScrapePercent = document.getElementById('globalScrapePercent');
+    const globalScrapeBar = document.getElementById('globalScrapeBar');
+
+    let pollingIntervalId = null;
 
     const toggleModal = (isOpen) => {
         if (isOpen) {
@@ -141,9 +171,80 @@
         modalElement.classList.add('d-none');
     };
 
+    const updateProgressUi = (data) => {
+        const percent = Number(data.progressPercent ?? 0);
+        const message = data.message ?? 'Récupération en cours...';
+
+        modalScrapeProgress.classList.remove('d-none');
+        modalScrapeMessage.textContent = message;
+        modalScrapePercent.textContent = `${percent}%`;
+        modalScrapeBar.style.width = `${percent}%`;
+
+        globalScrapeProgress.classList.remove('d-none');
+        globalScrapeMessage.textContent = message;
+        globalScrapePercent.textContent = `${percent}%`;
+        globalScrapeBar.style.width = `${percent}%`;
+    };
+
+    const stopPolling = () => {
+        if (pollingIntervalId !== null) {
+            clearInterval(pollingIntervalId);
+            pollingIntervalId = null;
+        }
+    };
+
+    const startPolling = (trackingKey) => {
+        const poll = async () => {
+            const response = await fetch(`{{ url('/series-infos/scrape-status') }}/${trackingKey}`, {
+                headers: {
+                    'Accept': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Impossible de récupérer la progression.');
+            }
+
+            const data = await response.json();
+            updateProgressUi(data);
+
+            if (data.seriesInfoId) {
+                toggleModal(false);
+            }
+
+            if (data.state === 'completed') {
+                stopPolling();
+                window.location.reload();
+            }
+
+            if (data.state === 'error') {
+                stopPolling();
+                throw new Error(data.message ?? 'Erreur de scraping.');
+            }
+        };
+
+        poll().catch((error) => {
+            errorElement.textContent = error.message;
+            errorElement.classList.remove('d-none');
+            submitButton.disabled = false;
+            spinnerElement.classList.add('d-none');
+        });
+
+        pollingIntervalId = window.setInterval(() => {
+            poll().catch((error) => {
+                stopPolling();
+                errorElement.textContent = error.message;
+                errorElement.classList.remove('d-none');
+                submitButton.disabled = false;
+                spinnerElement.classList.add('d-none');
+            });
+        }, 2500);
+    };
+
     openModalButton.addEventListener('click', () => {
         errorElement.classList.add('d-none');
         errorElement.textContent = '';
+        modalScrapeProgress.classList.add('d-none');
         addSeriesForm.reset();
         toggleModal(true);
     });
@@ -155,6 +256,7 @@
     addSeriesForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
+        stopPolling();
         spinnerElement.classList.remove('d-none');
         submitButton.disabled = true;
         errorElement.classList.add('d-none');
@@ -178,12 +280,11 @@
                 throw new Error(firstError);
             }
 
-            toggleModal(false);
-            window.location.reload();
+            spinnerElement.classList.add('d-none');
+            startPolling(responseData.trackingKey);
         } catch (error) {
             errorElement.textContent = error.message;
             errorElement.classList.remove('d-none');
-        } finally {
             spinnerElement.classList.add('d-none');
             submitButton.disabled = false;
         }

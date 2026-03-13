@@ -6,7 +6,7 @@ use App\Models\Episode;
 use App\Models\EpisodeServer;
 use App\Models\SeriesInfo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class SeriesInfoListingTest extends TestCase
@@ -93,24 +93,35 @@ class SeriesInfoListingTest extends TestCase
         $response->assertSee('Lire maintenant');
     }
 
-    public function test_series_infos_page_can_trigger_scraping_from_modal_form(): void
+    public function test_series_infos_page_can_start_scraping_with_tracking_key(): void
     {
-        Artisan::shouldReceive('call')
-            ->once()
-            ->with('scrape:episodes', [
-                '--list-page-url' => 'https://example.com/series',
-            ]);
-
         $response = $this->postJson(route('series-infos.scrape'), [
             'list_page_url' => 'https://example.com/series',
         ]);
 
         $response->assertOk();
-        $response->assertJson([
-            'created' => false,
-            'seriesInfoId' => null,
-            'seriesInfoTitle' => null,
-        ]);
+        $response->assertJsonPath('started', true);
+        $this->assertIsString($response->json('trackingKey'));
+    }
+
+    public function test_series_infos_page_can_get_scrape_status_with_tracking_key(): void
+    {
+        Cache::put('scrape_progress:test-key', [
+            'state' => 'running',
+            'message' => 'Récupération des épisodes en cours...',
+            'episodesTotal' => 12,
+            'episodesProcessed' => 4,
+            'progressPercent' => 33,
+            'seriesInfoId' => 11,
+            'seriesInfoTitle' => 'Serie Eleven',
+        ], now()->addMinutes(5));
+
+        $response = $this->getJson(route('series-infos.scrape-status', 'test-key'));
+
+        $response->assertOk();
+        $response->assertJsonPath('state', 'running');
+        $response->assertJsonPath('progressPercent', 33);
+        $response->assertJsonPath('seriesInfoId', 11);
     }
 
     public function test_series_infos_page_scrape_requires_valid_url(): void

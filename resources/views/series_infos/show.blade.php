@@ -32,8 +32,29 @@
         </div>
     </section>
 
+    @php
+        $episodesTotal = $seriesInfo->episodes->count();
+        $episodesDone = $seriesInfo->episodes->where('status', \App\Models\Episode::STATUS_DONE)->count();
+        $episodesInProgress = $seriesInfo->episodes->where('status', \App\Models\Episode::STATUS_IN_PROGRESS)->count();
+        $episodesPending = $seriesInfo->episodes->where('status', \App\Models\Episode::STATUS_PENDING)->count();
+        $isScrapingInProgress = ($episodesInProgress + $episodesPending) > 0;
+        $progressPercent = $episodesTotal > 0 ? (int) round(($episodesDone / $episodesTotal) * 100) : 0;
+    @endphp
+
     <section class="mt-4">
         <h2 class="h4 mb-3">Épisodes</h2>
+
+        @if ($isScrapingInProgress)
+            <div class="alert alert-info">
+                <div class="d-flex justify-content-between small mb-2">
+                    <span>Récupération des liens en cours...</span>
+                    <span>{{ $progressPercent }}%</span>
+                </div>
+                <div class="progress" role="progressbar" aria-label="Progression de récupération">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: {{ $progressPercent }}%"></div>
+                </div>
+            </div>
+        @endif
 
         <div class="row g-4 row-cols-2 row-cols-lg-3 row-cols-xxl-4">
             @forelse ($seriesInfo->episodes as $episode)
@@ -70,7 +91,15 @@
                         <div class="card-body">
                             <h3 class="h6 card-title mb-2">{{ $episode->title }}</h3>
                             <p class="small mb-0 {{ $playableUrl ? 'text-info' : 'text-secondary' }}">
-                                {{ $playableUrl ? 'Lire maintenant' : 'Lien final indisponible' }}
+                                @if ($playableUrl)
+                                    Lire maintenant
+                                @elseif (in_array($episode->status, [\App\Models\Episode::STATUS_PENDING, \App\Models\Episode::STATUS_IN_PROGRESS], true))
+                                    Récupération en cours...
+                                @elseif ($episode->status === \App\Models\Episode::STATUS_ERROR)
+                                    Erreur de récupération
+                                @else
+                                    Lien final indisponible
+                                @endif
                             </p>
                         </div>
                     </article>
@@ -85,5 +114,13 @@
         </div>
     </section>
 </div>
+
+@if ($isScrapingInProgress)
+    <script>
+        window.setTimeout(() => {
+            window.location.reload();
+        }, 10000);
+    </script>
+@endif
 </body>
 </html>
