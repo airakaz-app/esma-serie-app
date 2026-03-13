@@ -6,6 +6,7 @@ use App\Models\Episode;
 use App\Models\EpisodeServer;
 use App\Models\SeriesInfo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
 class SeriesInfoListingTest extends TestCase
@@ -90,5 +91,35 @@ class SeriesInfoListingTest extends TestCase
         $response->assertOk();
         $response->assertSee('https://stream.example.com/final-episode-1');
         $response->assertSee('Lire maintenant');
+    }
+
+    public function test_series_infos_page_can_trigger_scraping_from_modal_form(): void
+    {
+        Artisan::shouldReceive('call')
+            ->once()
+            ->with('scrape:episodes', [
+                '--list-page-url' => 'https://example.com/series',
+            ]);
+
+        $response = $this->postJson(route('series-infos.scrape'), [
+            'list_page_url' => 'https://example.com/series',
+        ]);
+
+        $response->assertOk();
+        $response->assertJson([
+            'created' => false,
+            'seriesInfoId' => null,
+            'seriesInfoTitle' => null,
+        ]);
+    }
+
+    public function test_series_infos_page_scrape_requires_valid_url(): void
+    {
+        $response = $this->postJson(route('series-infos.scrape'), [
+            'list_page_url' => 'invalid-url',
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['list_page_url']);
     }
 }
