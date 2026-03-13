@@ -13,26 +13,34 @@ class EpisodeListScraper
      */
     public function scrape(string $listUrl): array
     {
-        $crawler = $this->fetcher->fetch($listUrl);
+        $html = $this->fetcher->fetch($listUrl);
 
+        $dom = new \DOMDocument();
+        @$dom->loadHTML($html);
+
+        $xpath = new \DOMXPath($dom);
         $episodes = [];
 
-        foreach ($crawler->filter('article.postEp') as $node) {
-            $item = $crawler->createSubCrawler($node);
-            $anchor = $item->filter('a[href]');
-            $titleNode = $item->filter('div.title');
+        $nodes = $xpath->query("//article[contains(concat(' ', normalize-space(@class), ' '), ' postEp ')]");
+        if ($nodes === false) {
+            return [];
+        }
 
-            if ($anchor->count() === 0 || $titleNode->count() === 0) {
+        foreach ($nodes as $node) {
+            $anchor = $xpath->query('.//a[@href]', $node)?->item(0);
+            $titleNode = $xpath->query(".//div[contains(concat(' ', normalize-space(@class), ' '), ' title ')]", $node)?->item(0);
+
+            if (! $anchor instanceof \DOMElement || ! $titleNode instanceof \DOMElement) {
                 continue;
             }
 
-            $pageUrl = trim((string) $anchor->first()->attr('href'));
+            $pageUrl = trim((string) $anchor->getAttribute('href'));
             if ($pageUrl === '') {
                 continue;
             }
 
             $episodes[] = [
-                'title' => trim($titleNode->first()->text('')),
+                'title' => trim($titleNode->textContent),
                 'page_url' => rtrim($pageUrl, '/').'/see/',
             ];
         }
