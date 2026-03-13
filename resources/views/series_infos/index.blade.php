@@ -114,7 +114,7 @@
 
                 <button type="submit" class="btn btn-primary" id="submitAddSeriesBtn">
                     <span id="addSeriesSpinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
-                    Lancer le scraping
+                    Lancer
                 </button>
             </form>
         </div>
