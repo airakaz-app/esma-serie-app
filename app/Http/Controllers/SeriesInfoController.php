@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ScrapeSeriesInfoRequest;
+use App\Jobs\RunScrapeEpisodesJob;
 use App\Models\SeriesInfo;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -51,53 +52,18 @@ class SeriesInfoController extends Controller
 
         Cache::put($this->trackingCacheKey($trackingKey), [
             'state' => 'running',
-            'message' => 'Initialisation du scraping...',
+            'message' => 'Scraping mis en file. En attente du worker...',
             'episodesTotal' => 0,
             'episodesProcessed' => 0,
             'progressPercent' => 0,
             'seriesInfoId' => null,
             'seriesInfoTitle' => null,
+            'currentEpisodeTitle' => null,
+            'lastError' => null,
+            'updatedAt' => now()->toIso8601String(),
         ], now()->addHours(2));
 
-        $escapedPhpBinary = escapeshellarg(PHP_BINARY);
-        $escapedArtisanPath = escapeshellarg(base_path('artisan'));
-        $escapedListPageUrl = escapeshellarg($listPageUrl);
-        $escapedTrackingKey = escapeshellarg($trackingKey);
-
-        $command = sprintf(
-            'cd %s && nohup %s %s scrape:episodes --list-page-url=%s --tracking-key=%s >> %s 2>&1 &',
-            escapeshellarg(base_path()),
-            $escapedPhpBinary,
-            $escapedArtisanPath,
-            $escapedListPageUrl,
-            $escapedTrackingKey,
-            escapeshellarg(storage_path('logs/scrape-detached.log')),
-        );
-
-        exec($command, $output, $resultCode);
-
-        Log::info('Lancement du scraping en tâche détachée.', [
-            'tracking_key' => $trackingKey,
-            'result_code' => $resultCode,
-            'command' => $command,
-        ]);
-
-        if ($resultCode !== 0) {
-            Cache::put($this->trackingCacheKey($trackingKey), [
-                'state' => 'error',
-                'message' => 'Impossible de lancer le scraping en arrière-plan.',
-                'episodesTotal' => 0,
-                'episodesProcessed' => 0,
-                'progressPercent' => 0,
-                'seriesInfoId' => null,
-                'seriesInfoTitle' => null,
-            ], now()->addHours(2));
-
-            return response()->json([
-                'started' => false,
-                'message' => 'Le scraping n’a pas pu démarrer.',
-            ], 500);
-        }
+        RunScrapeEpisodesJob::dispatch($listPageUrl, $trackingKey);
 
         return response()->json([
             'started' => true,

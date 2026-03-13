@@ -238,7 +238,7 @@
             updateProgressUi(data);
 
             if (lastProgressTimestamp !== null && Date.now() - lastProgressTimestamp.getTime() > 120000 && data.state === 'running') {
-                throw new Error('Le scraping semble bloqué (aucune mise à jour depuis plus de 2 minutes). Vérifiez storage/logs/scrape-detached.log.');
+                throw new Error('Le scraping semble bloqué (aucune mise à jour depuis plus de 2 minutes). Vérifiez que le worker de queue tourne: php artisan queue:work.');
             }
 
             if (data.seriesInfoId && !hasReloadedAfterSeriesCreation) {
