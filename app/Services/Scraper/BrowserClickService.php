@@ -202,7 +202,7 @@ class BrowserClickService
         $errors = [];
 
         foreach ($candidateCommands as $candidateCommand) {
-            $candidateArgs = preg_split('/\s+/', $candidateCommand) ?: [];
+            $candidateArgs = $this->expandPythonCommandToken($candidateCommand);
             if ($candidateArgs === []) {
                 continue;
             }
@@ -231,11 +231,24 @@ class BrowserClickService
         }
 
         $this->cachedPythonResolutionError = sprintf(
-            'Aucun interpréteur Python utilisable. Commandes testées: %s. Configurez SCRAPER_PYTHON_CANDIDATES (ex: "py -3,python,python3") ou SCRAPER_BROWSER_STRATEGY=webdriver.',
+            'Aucun interpréteur Python utilisable. Commandes testées: %s. Configurez SCRAPER_PYTHON_CANDIDATES (ex: "py3,python,python3") ou SCRAPER_BROWSER_STRATEGY=webdriver.',
             implode(' | ', $errors)
         );
 
         return null;
+    }
+
+
+    /**
+     * @return array<int, string>
+     */
+    private function expandPythonCommandToken(string $candidateCommand): array
+    {
+        if ($candidateCommand === 'py3' || $candidateCommand === 'py-3') {
+            return ['py', '-3'];
+        }
+
+        return preg_split('/\s+/', $candidateCommand) ?: [];
     }
 
     public function summarizeHtml(string $html): array

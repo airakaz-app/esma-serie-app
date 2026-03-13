@@ -8,7 +8,7 @@ return [
     'headless' => (bool) env('SCRAPER_HEADLESS', true),
     'browser_strategy' => env('SCRAPER_BROWSER_STRATEGY', 'auto'),
     'python_binary' => env('SCRAPER_PYTHON_BINARY', 'python3'),
-    'python_candidates' => array_values(array_filter(array_map('trim', explode(',', (string) env('SCRAPER_PYTHON_CANDIDATES', 'python3,python,py -3,py'))))),
+    'python_candidates' => array_values(array_filter(array_map('trim', explode(',', (string) env('SCRAPER_PYTHON_CANDIDATES', 'python3,python,py3,py'))))),
     'python_script' => env('SCRAPER_PYTHON_SCRIPT', 'browser_click.py'),
     'python_timeout' => (int) env('SCRAPER_PYTHON_TIMEOUT', 60),
     'webdriver_url' => env('SCRAPER_WEBDRIVER_URL', 'http://127.0.0.1:9515'),
