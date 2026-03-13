@@ -128,15 +128,10 @@ class ScrapeEpisodesCommand extends Command
             return;
         }
 
-        $exists = SeriesInfo::query()->where('source_episode_page_url', $firstEpisodeUrl)->exists();
-        if ($exists) {
-            return;
-        }
-
         try {
             $seriesInfo = $this->seriesInfoScraper->scrapeFromEpisodeUrl($firstEpisodeUrl);
 
-            SeriesInfo::query()->updateOrCreate(
+            $seriesInfoModel = SeriesInfo::query()->updateOrCreate(
                 ['source_episode_page_url' => $seriesInfo['source_episode_page_url']],
                 [
                     'series_page_url' => $seriesInfo['series_page_url'],
@@ -148,6 +143,17 @@ class ScrapeEpisodesCommand extends Command
                     'actors' => $seriesInfo['actors'],
                 ],
             );
+
+            $episodeUrls = collect($episodes)
+                ->pluck('page_url')
+                ->filter(fn (?string $pageUrl): bool => $pageUrl !== null && $pageUrl !== '')
+                ->values();
+
+            if ($episodeUrls->isNotEmpty()) {
+                Episode::query()
+                    ->whereIn('page_url', $episodeUrls)
+                    ->update(['series_info_id' => $seriesInfoModel->id]);
+            }
         } catch (\Throwable $e) {
             Log::warning('Erreur récupération infos série', [
                 'source_episode_page_url' => $firstEpisodeUrl,
