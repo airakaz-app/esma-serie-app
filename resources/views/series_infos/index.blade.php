@@ -3,15 +3,20 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Séries</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
 <div class="container py-4 py-lg-5">
-    <header class="mb-4 mb-lg-5">
-        <h1 class="display-6 fw-bold mb-2">Séries disponibles</h1>
-        <p class="text-secondary mb-0">Cliquez sur une carte pour afficher les épisodes liés.</p>
+    <header class="mb-4 mb-lg-5 d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-3">
+        <div>
+            <h1 class="display-6 fw-bold mb-2">Séries disponibles</h1>
+            <p class="text-secondary mb-0">Cliquez sur une carte pour afficher les épisodes liés.</p>
+        </div>
+
+        <button type="button" id="openAddSeriesModal" class="btn btn-primary">Ajouter</button>
     </header>
 
     @if ($seriesInfos->isEmpty())
@@ -83,5 +88,106 @@
         </div>
     @endif
 </div>
+
+<div id="addSeriesModal" class="position-fixed top-0 start-0 w-100 h-100 d-none align-items-center justify-content-center bg-black bg-opacity-75 p-3" style="z-index: 1050;">
+    <div class="card bg-dark text-light border-secondary w-100" style="max-width: 560px;">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h5 mb-0">Ajouter une série</h2>
+                <button type="button" id="closeAddSeriesModal" class="btn-close btn-close-white" aria-label="Fermer"></button>
+            </div>
+
+            <form id="addSeriesForm" class="d-flex flex-column gap-3">
+                <div>
+                    <label for="listPageUrl" class="form-label">URL de la page liste</label>
+                    <input
+                        type="url"
+                        id="listPageUrl"
+                        name="list_page_url"
+                        class="form-control"
+                        placeholder="https://example.com/series"
+                        required
+                    >
+                </div>
+
+                <div id="addSeriesError" class="alert alert-danger py-2 px-3 mb-0 d-none"></div>
+
+                <button type="submit" class="btn btn-primary" id="submitAddSeriesBtn">
+                    <span id="addSeriesSpinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
+                    Lancer le scraping
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    const modalElement = document.getElementById('addSeriesModal');
+    const openModalButton = document.getElementById('openAddSeriesModal');
+    const closeModalButton = document.getElementById('closeAddSeriesModal');
+    const addSeriesForm = document.getElementById('addSeriesForm');
+    const submitButton = document.getElementById('submitAddSeriesBtn');
+    const spinnerElement = document.getElementById('addSeriesSpinner');
+    const errorElement = document.getElementById('addSeriesError');
+
+    const toggleModal = (isOpen) => {
+        if (isOpen) {
+            modalElement.classList.remove('d-none');
+            modalElement.classList.add('d-flex');
+            return;
+        }
+
+        modalElement.classList.remove('d-flex');
+        modalElement.classList.add('d-none');
+    };
+
+    openModalButton.addEventListener('click', () => {
+        errorElement.classList.add('d-none');
+        errorElement.textContent = '';
+        addSeriesForm.reset();
+        toggleModal(true);
+    });
+
+    closeModalButton.addEventListener('click', () => {
+        toggleModal(false);
+    });
+
+    addSeriesForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        spinnerElement.classList.remove('d-none');
+        submitButton.disabled = true;
+        errorElement.classList.add('d-none');
+
+        const formData = new FormData(addSeriesForm);
+
+        try {
+            const response = await fetch('{{ route('series-infos.scrape') }}', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                },
+                body: formData,
+            });
+
+            const responseData = await response.json();
+
+            if (!response.ok) {
+                const firstError = responseData?.errors?.list_page_url?.[0] ?? responseData?.message ?? 'Une erreur est survenue.';
+                throw new Error(firstError);
+            }
+
+            toggleModal(false);
+            window.location.reload();
+        } catch (error) {
+            errorElement.textContent = error.message;
+            errorElement.classList.remove('d-none');
+        } finally {
+            spinnerElement.classList.add('d-none');
+            submitButton.disabled = false;
+        }
+    });
+</script>
 </body>
 </html>

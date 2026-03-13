@@ -17,6 +17,7 @@ class ScrapeEpisodesCommand extends Command
     protected $signature = 'scrape:episodes
         {--limit= : Nombre max de serveurs à traiter}
         {--episode-id= : Traiter un seul épisode}
+        {--list-page-url= : URL de la page liste à scraper}
         {--retry-errors : Rejouer les statuts error}
         {--only-pending : Traiter uniquement les statuts pending}';
 
@@ -33,7 +34,7 @@ class ScrapeEpisodesCommand extends Command
 
     public function handle(): int
     {
-        $listUrl = (string) config('scraper.list_page_url');
+        $listUrl = (string) ($this->option('list-page-url') ?: config('scraper.list_page_url'));
         if ($listUrl === '' && ! $this->option('episode-id')) {
             $this->error('SCRAPER_LIST_PAGE_URL est vide.');
 
