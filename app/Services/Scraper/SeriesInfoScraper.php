@@ -31,7 +31,7 @@ class SeriesInfoScraper
         }
 
         $titleLink = $xpath->query('.//h1//a', $infoBlock)?->item(0);
-        $title = $titleLink instanceof \DOMElement ? trim($titleLink->textContent) : '';
+        $title = $titleLink instanceof \DOMElement ? $this->sanitizeTitle(trim($titleLink->textContent)) : '';
         $titleUrl = '';
 
         if ($titleLink instanceof \DOMElement) {
@@ -144,6 +144,11 @@ class SeriesInfoScraper
             'categories' => [],
             'actors' => [],
         ];
+    }
+
+    private function sanitizeTitle(string $title): string
+    {
+        return trim(str_replace('الحلقة 1 ', '', $title));
     }
 
     private function resolveUrl(string $baseUrl, string $url): string
