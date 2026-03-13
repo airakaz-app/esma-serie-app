@@ -3,12 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ScrapeSeriesInfoRequest;
+use App\Jobs\RunScrapeEpisodesJob;
 use App\Models\SeriesInfo;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
 
 class SeriesInfoController extends Controller
 {
@@ -51,25 +51,18 @@ class SeriesInfoController extends Controller
 
         Cache::put($this->trackingCacheKey($trackingKey), [
             'state' => 'running',
-            'message' => 'Initialisation du scraping...',
+            'message' => 'Scraping mis en file. En attente du worker...',
             'episodesTotal' => 0,
             'episodesProcessed' => 0,
             'progressPercent' => 0,
             'seriesInfoId' => null,
             'seriesInfoTitle' => null,
+            'currentEpisodeTitle' => null,
+            'lastError' => null,
+            'updatedAt' => now()->toIso8601String(),
         ], now()->addHours(2));
 
-        $process = new Process([
-            PHP_BINARY,
-            base_path('artisan'),
-            'scrape:episodes',
-            '--list-page-url='.$listPageUrl,
-            '--tracking-key='.$trackingKey,
-        ]);
-
-        $process->setWorkingDirectory(base_path());
-        $process->disableOutput();
-        $process->start();
+        RunScrapeEpisodesJob::dispatch($listPageUrl, $trackingKey);
 
         return response()->json([
             'started' => true,

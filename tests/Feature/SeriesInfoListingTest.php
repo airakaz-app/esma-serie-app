@@ -4,9 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\Episode;
 use App\Models\EpisodeServer;
+use App\Jobs\RunScrapeEpisodesJob;
 use App\Models\SeriesInfo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 class SeriesInfoListingTest extends TestCase
@@ -95,6 +97,8 @@ class SeriesInfoListingTest extends TestCase
 
     public function test_series_infos_page_can_start_scraping_with_tracking_key(): void
     {
+        Queue::fake();
+
         $response = $this->postJson(route('series-infos.scrape'), [
             'list_page_url' => 'https://example.com/series',
         ]);
@@ -102,6 +106,12 @@ class SeriesInfoListingTest extends TestCase
         $response->assertOk();
         $response->assertJsonPath('started', true);
         $this->assertIsString($response->json('trackingKey'));
+
+        Queue::assertPushed(RunScrapeEpisodesJob::class, function (RunScrapeEpisodesJob $job): bool {
+            return $job->listPageUrl === 'https://example.com/series'
+                && is_string($job->trackingKey)
+                && $job->trackingKey !== '';
+        });
     }
 
     public function test_series_infos_page_can_get_scrape_status_with_tracking_key(): void
@@ -114,6 +124,9 @@ class SeriesInfoListingTest extends TestCase
             'progressPercent' => 33,
             'seriesInfoId' => 11,
             'seriesInfoTitle' => 'Serie Eleven',
+            'currentEpisodeTitle' => 'Episode 4',
+            'lastError' => null,
+            'updatedAt' => now()->toIso8601String(),
         ], now()->addMinutes(5));
 
         $response = $this->getJson(route('series-infos.scrape-status', 'test-key'));
@@ -122,6 +135,7 @@ class SeriesInfoListingTest extends TestCase
         $response->assertJsonPath('state', 'running');
         $response->assertJsonPath('progressPercent', 33);
         $response->assertJsonPath('seriesInfoId', 11);
+        $response->assertJsonPath('currentEpisodeTitle', 'Episode 4');
     }
 
     public function test_series_infos_page_scrape_requires_valid_url(): void
