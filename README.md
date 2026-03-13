@@ -83,7 +83,8 @@ Variables disponibles :
 - `SCRAPER_MAX_RETRIES` (défaut `3`)
 - `SCRAPER_HEADLESS` (`true` / `false`)
 - `SCRAPER_BROWSER_STRATEGY` (`auto`, `python`, `webdriver`)
-- `SCRAPER_PYTHON_BINARY` (défaut `python3`)
+- `SCRAPER_PYTHON_BINARY` (défaut `python3`, conservé pour compatibilité)
+- `SCRAPER_PYTHON_CANDIDATES` (CSV testé dans l'ordre, défaut `python3,python,py -3,py`)
 - `SCRAPER_PYTHON_SCRIPT` (défaut `browser_click.py`)
 - `SCRAPER_PYTHON_TIMEOUT` (défaut `60`)
 - `SCRAPER_WEBDRIVER_URL` (défaut `http://127.0.0.1:9515`)
@@ -138,6 +139,7 @@ Configuration recommandée :
 ```env
 SCRAPER_BROWSER_STRATEGY=python
 SCRAPER_PYTHON_BINARY=python3
+SCRAPER_PYTHON_CANDIDATES=python3,python,py -3,py
 SCRAPER_PYTHON_SCRIPT=browser_click.py
 SCRAPER_HEADLESS=true
 ```
@@ -145,3 +147,6 @@ SCRAPER_HEADLESS=true
 Si vous forcez `SCRAPER_BROWSER_STRATEGY=webdriver`, le scraper conserve la logique WebDriver HTTP (endpoints `9515`, `4444`, `4444/wd/hub` + auto-start chromedriver si activé).
 
 En cas d'échec, consultez `storage/logs/laravel.log` (et `/tmp/scraper-chromedriver.log` uniquement pour le mode `webdriver`).
+
+
+Sous Windows, si `python` renvoie le message Microsoft Store, gardez `SCRAPER_PYTHON_CANDIDATES=py -3,python,python3` pour forcer le lanceur Python installé.

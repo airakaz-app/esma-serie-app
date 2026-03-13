@@ -1,5 +1,6 @@
 import argparse
 import json
+import time
 import traceback
 
 from selenium import webdriver
@@ -35,10 +36,13 @@ def resolve_url(iframe_url: str, timeout: int, headless: bool):
         free_btn = wait.until(EC.element_to_be_clickable((By.ID, 'method_free')))
         free_btn.click()
 
+        time.sleep(1)
+
         download_btn = wait.until(EC.element_to_be_clickable((By.ID, 'downloadbtn')))
         download_btn.click()
 
         wait.until(lambda d: d.execute_script('return document.readyState') == 'complete')
+        time.sleep(2)
 
         return {
             'success': True,
