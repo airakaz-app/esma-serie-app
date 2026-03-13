@@ -130,6 +130,7 @@
                     <div class="progress" role="progressbar" aria-label="Progression du scraping">
                         <div id="modalScrapeBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
                     </div>
+                    <div id="modalScrapeDebug" class="small text-secondary mt-2"></div>
                 </div>
 
                 <button type="submit" class="btn btn-primary" id="submitAddSeriesBtn">
@@ -153,6 +154,7 @@
     const modalScrapeMessage = document.getElementById('modalScrapeMessage');
     const modalScrapePercent = document.getElementById('modalScrapePercent');
     const modalScrapeBar = document.getElementById('modalScrapeBar');
+    const modalScrapeDebug = document.getElementById('modalScrapeDebug');
     const globalScrapeProgress = document.getElementById('globalScrapeProgress');
     const globalScrapeMessage = document.getElementById('globalScrapeMessage');
     const globalScrapePercent = document.getElementById('globalScrapePercent');
@@ -160,6 +162,7 @@
 
     let pollingIntervalId = null;
     let hasReloadedAfterSeriesCreation = false;
+    let lastProgressTimestamp = null;
 
     const toggleModal = (isOpen) => {
         if (isOpen) {
@@ -175,11 +178,32 @@
     const updateProgressUi = (data) => {
         const percent = Number(data.progressPercent ?? 0);
         const message = data.message ?? 'Récupération en cours...';
+        const episodesProcessed = Number(data.episodesProcessed ?? 0);
+        const episodesTotal = Number(data.episodesTotal ?? 0);
+        const currentEpisodeTitle = data.currentEpisodeTitle ?? 'N/A';
+        const updatedAt = data.updatedAt ? new Date(data.updatedAt) : null;
+
+        if (updatedAt instanceof Date && !Number.isNaN(updatedAt.valueOf())) {
+            lastProgressTimestamp = updatedAt;
+        }
 
         modalScrapeProgress.classList.remove('d-none');
         modalScrapeMessage.textContent = message;
         modalScrapePercent.textContent = `${percent}%`;
         modalScrapeBar.style.width = `${percent}%`;
+
+        const debugParts = [
+            `État: ${data.state ?? 'running'}`,
+            `Épisodes: ${episodesProcessed}/${episodesTotal}`,
+            `Épisode courant: ${currentEpisodeTitle}`,
+            `Dernière mise à jour: ${updatedAt ? updatedAt.toLocaleTimeString() : 'N/A'}`,
+        ];
+
+        if (data.lastError) {
+            debugParts.push(`Dernière erreur: ${data.lastError}`);
+        }
+
+        modalScrapeDebug.textContent = debugParts.join(' | ');
 
         globalScrapeProgress.classList.remove('d-none');
         globalScrapeMessage.textContent = message;
@@ -212,6 +236,10 @@
 
             const data = await response.json();
             updateProgressUi(data);
+
+            if (lastProgressTimestamp !== null && Date.now() - lastProgressTimestamp.getTime() > 120000 && data.state === 'running') {
+                throw new Error('Le scraping semble bloqué (aucune mise à jour depuis plus de 2 minutes). Vérifiez storage/logs/scrape-detached.log.');
+            }
 
             if (data.seriesInfoId && !hasReloadedAfterSeriesCreation) {
                 hasReloadedAfterSeriesCreation = true;
@@ -254,6 +282,8 @@
         errorElement.classList.add('d-none');
         errorElement.textContent = '';
         modalScrapeProgress.classList.add('d-none');
+        modalScrapeDebug.textContent = '';
+        lastProgressTimestamp = null;
         addSeriesForm.reset();
         toggleModal(true);
     });
@@ -266,6 +296,7 @@
         event.preventDefault();
 
         hasReloadedAfterSeriesCreation = false;
+        lastProgressTimestamp = null;
         stopPolling();
         spinnerElement.classList.remove('d-none');
         submitButton.disabled = true;

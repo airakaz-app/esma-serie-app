@@ -35,6 +35,10 @@ class ScrapeEpisodesCommand extends Command
 
     private int $episodesProcessed = 0;
 
+    private ?string $currentEpisodeTitle = null;
+
+    private ?string $lastError = null;
+
     public function __construct(
         private readonly EpisodeListScraper $listScraper,
         private readonly EpisodePageScraper $pageScraper,
@@ -69,6 +73,7 @@ class ScrapeEpisodesCommand extends Command
         $this->updateTrackingStatus('running', 'Récupération des épisodes en cours...');
 
         foreach ($episodes as $episode) {
+            $this->currentEpisodeTitle = $episode->title;
             $this->line("- Épisode #{$episode->id}: {$episode->title}");
             $this->processEpisode($episode, $serversProcessed, $limit);
             $this->episodesProcessed++;
@@ -80,6 +85,7 @@ class ScrapeEpisodesCommand extends Command
             }
         }
 
+        $this->currentEpisodeTitle = null;
         $this->updateTrackingStatus('completed', 'Scraping terminé.');
 
         return self::SUCCESS;
@@ -111,6 +117,8 @@ class ScrapeEpisodesCommand extends Command
 
             $this->info(sprintf('Épisodes détectés: %d', count($episodes)));
         } catch (\Throwable $e) {
+            $this->lastError = $e->getMessage();
+
             Log::error('Erreur scan liste épisodes', ['error' => $e->getMessage()]);
             $this->error('Erreur pendant le scan liste: '.$e->getMessage());
             $this->updateTrackingStatus('error', 'Erreur pendant le scan de la page liste.');
@@ -234,6 +242,8 @@ class ScrapeEpisodesCommand extends Command
 
             $this->refreshEpisodeStatus($episode);
         } catch (\Throwable $e) {
+            $this->lastError = $e->getMessage();
+
             $episode->forceFill([
                 'status' => Episode::STATUS_ERROR,
                 'error_message' => $e->getMessage(),
@@ -304,6 +314,8 @@ class ScrapeEpisodesCommand extends Command
                 ])->save();
             }
         } catch (\Throwable $e) {
+            $this->lastError = $e->getMessage();
+
             $server->forceFill([
                 'status' => EpisodeServer::STATUS_ERROR,
                 'error_message' => $e->getMessage(),
@@ -357,6 +369,9 @@ class ScrapeEpisodesCommand extends Command
             'progressPercent' => $percent,
             'seriesInfoId' => $this->trackedSeriesInfoId,
             'seriesInfoTitle' => $this->trackedSeriesInfoTitle,
+            'currentEpisodeTitle' => $this->currentEpisodeTitle,
+            'lastError' => $this->lastError,
+            'updatedAt' => now()->toIso8601String(),
         ], now()->addHours(2));
     }
 
