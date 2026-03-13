@@ -159,6 +159,7 @@
     const globalScrapeBar = document.getElementById('globalScrapeBar');
 
     let pollingIntervalId = null;
+    let hasReloadedAfterSeriesCreation = false;
 
     const toggleModal = (isOpen) => {
         if (isOpen) {
@@ -201,6 +202,10 @@
                 },
             });
 
+            if (response.status === 404) {
+                return;
+            }
+
             if (!response.ok) {
                 throw new Error('Impossible de récupérer la progression.');
             }
@@ -208,8 +213,12 @@
             const data = await response.json();
             updateProgressUi(data);
 
-            if (data.seriesInfoId) {
+            if (data.seriesInfoId && !hasReloadedAfterSeriesCreation) {
+                hasReloadedAfterSeriesCreation = true;
+                stopPolling();
                 toggleModal(false);
+                window.location.reload();
+                return;
             }
 
             if (data.state === 'completed') {
@@ -256,6 +265,7 @@
     addSeriesForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
+        hasReloadedAfterSeriesCreation = false;
         stopPolling();
         spinnerElement.classList.remove('d-none');
         submitButton.disabled = true;
