@@ -15,24 +15,39 @@ class EpisodePageScraper
      */
     public function extractServers(string $episodeUrl): array
     {
-        $crawler = $this->fetcher->fetch($episodeUrl);
+        $html = $this->fetcher->fetch($episodeUrl);
+
+        $dom = new \DOMDocument();
+        @$dom->loadHTML($html);
+
+        $xpath = new \DOMXPath($dom);
         $allowedHosts = collect(config('scraper.allowed_hosts', ['vdesk']))
             ->map(fn (string $host): string => mb_strtolower($host))
             ->values();
 
         $servers = [];
+        $nodes = $xpath->query("//*[contains(concat(' ', normalize-space(@class), ' '), ' serversList ')]//li");
 
-        foreach ($crawler->filter('.serversList li') as $node) {
-            $item = $crawler->createSubCrawler($node);
-            $dataSrc = trim((string) ($node->attributes?->getNamedItem('data-src')?->nodeValue ?? ''));
-            $host = trim($item->filter('em')->first()->text(''));
+        if ($nodes === false) {
+            return [];
+        }
+
+        foreach ($nodes as $node) {
+            if (! $node instanceof \DOMElement) {
+                continue;
+            }
+
+            $dataSrc = trim((string) $node->getAttribute('data-src'));
+            $host = trim((string) ($xpath->query('.//em', $node)?->item(0)?->textContent ?? ''));
 
             if ($dataSrc === '' || ! $allowedHosts->contains(mb_strtolower($host))) {
                 continue;
             }
 
+            $serverName = trim((string) ($xpath->query('.//span', $node)?->item(0)?->textContent ?? ''));
+
             $servers[] = [
-                'server_name' => trim($item->filter('span')->first()->text('')),
+                'server_name' => $serverName,
                 'host' => $host,
                 'server_page_url' => $this->urlHelper->absoluteUrl($episodeUrl, $dataSrc),
             ];
@@ -43,18 +58,23 @@ class EpisodePageScraper
 
     public function extractIframeUrl(string $serverPageUrl): ?string
     {
-        $crawler = $this->fetcher->fetch($serverPageUrl);
-        $iframe = $crawler->filter('iframe[src]')->first();
+        $html = $this->fetcher->fetch($serverPageUrl);
 
-        if ($iframe->count() === 0) {
-            $iframe = $crawler->filter('noscript iframe[src]')->first();
+        $dom = new \DOMDocument();
+        @$dom->loadHTML($html);
+
+        $xpath = new \DOMXPath($dom);
+
+        $iframe = $xpath->query('//iframe[@src]')?->item(0);
+        if (! $iframe instanceof \DOMElement) {
+            $iframe = $xpath->query('//noscript//iframe[@src]')?->item(0);
         }
 
-        if ($iframe->count() === 0) {
+        if (! $iframe instanceof \DOMElement) {
             return null;
         }
 
-        $src = trim((string) $iframe->attr('src'));
+        $src = trim((string) $iframe->getAttribute('src'));
         if ($src === '') {
             return null;
         }
