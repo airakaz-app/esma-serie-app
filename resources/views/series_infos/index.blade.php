@@ -4,19 +4,20 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Séries</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
-<div class="mx-auto max-w-7xl p-6 lg:p-8">
-    <header class="mb-8">
-        <h1 class="text-3xl font-bold tracking-tight">Séries disponibles</h1>
-        <p class="mt-2 text-sm text-slate-400">Cliquez sur une carte pour afficher les épisodes liés.</p>
+<div class="container py-4 py-lg-5">
+    <header class="mb-4 mb-lg-5">
+        <h1 class="display-6 fw-bold mb-2">Séries disponibles</h1>
+        <p class="text-secondary mb-0">Cliquez sur une carte pour afficher les épisodes liés.</p>
     </header>
 
     @if ($seriesInfos->isEmpty())
-        <p class="rounded-xl border border-slate-800 bg-slate-900/60 p-6 text-slate-400">Aucune série trouvée.</p>
+        <p class="rounded-3 border border-secondary-subtle bg-dark-subtle p-4 text-secondary">Aucune série trouvée.</p>
     @else
-        <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        <div class="row g-4 row-cols-2 row-cols-lg-3 row-cols-xxl-4">
             @foreach ($seriesInfos as $seriesInfo)
                 @php
                     $categories = collect($seriesInfo->categories)
@@ -32,57 +33,52 @@
                         ->values();
                 @endphp
 
-                <a
-                    href="{{ route('series-infos.show', $seriesInfo) }}"
-                    class="group overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-400/80 hover:shadow-indigo-950/30"
-                >
-                    <div class="aspect-[16/9] bg-slate-900">
-                        @if ($seriesInfo->cover_image_url)
-                            <img
-                                src="{{ $seriesInfo->cover_image_url }}"
-                                alt="Affiche de {{ $seriesInfo->title ?: 'série' }}"
-                                class="h-full w-full object-cover"
-                                loading="lazy"
-                            >
-                        @else
-                            <div class="flex h-full w-full items-center justify-center text-slate-500">Pas d'image</div>
-                        @endif
-                    </div>
+                <div class="col">
+                    <a href="{{ route('series-infos.show', $seriesInfo) }}" class="text-decoration-none d-block h-100">
+                        <article class="card h-100 border-0 shadow-sm bg-dark text-light">
+                            <div class="ratio ratio-16x9 bg-black">
+                                @if ($seriesInfo->cover_image_url)
+                                    <img
+                                        src="{{ $seriesInfo->cover_image_url }}"
+                                        alt="Affiche de {{ $seriesInfo->title ?: 'série' }}"
+                                        class="w-100 h-100 object-fit-cover"
+                                        loading="lazy"
+                                    >
+                                @else
+                                    <div class="d-flex align-items-center justify-content-center text-secondary">Pas d'image</div>
+                                @endif
+                            </div>
 
-                    <div class="space-y-3 p-4">
-                        <div class="flex items-start justify-between gap-3">
-                            <h2 class="line-clamp-2 text-lg font-semibold leading-tight">{{ $seriesInfo->title ?: 'Sans titre' }}</h2>
-                            <span class="whitespace-nowrap rounded-full bg-indigo-500/15 px-2.5 py-1 text-xs font-medium text-indigo-300">
-                                {{ $seriesInfo->episodes_count }} épisode(s)
-                            </span>
-                        </div>
+                            <div class="card-body d-flex flex-column gap-2">
+                                <div class="d-flex align-items-start justify-content-between gap-2">
+                                    <h2 class="h5 card-title mb-0">{{ $seriesInfo->title ?: 'Sans titre' }}</h2>
+                                    <span class="badge text-bg-primary">{{ $seriesInfo->episodes_count }} épisode(s)</span>
+                                </div>
 
-                        @if ($seriesInfo->story)
-                            <p class="line-clamp-3 text-sm text-slate-400">{{ $seriesInfo->story }}</p>
-                        @endif
+                                @if ($seriesInfo->story)
+                                    <p class="card-text small text-secondary mb-1">{{ \Illuminate\Support\Str::limit($seriesInfo->story, 130) }}</p>
+                                @endif
 
-                        <div class="space-y-2 text-xs text-slate-400">
-                            @if ($seriesInfo->episodes_min_episode_number || $seriesInfo->episodes_max_episode_number)
-                                <p>
-                                    Plage d'épisodes:
-                                    <span class="text-slate-300">
-                                        {{ $seriesInfo->episodes_min_episode_number ?? '?' }} → {{ $seriesInfo->episodes_max_episode_number ?? '?' }}
-                                    </span>
-                                </p>
-                            @endif
+                                <div class="small text-secondary mt-auto">
+                                    @if ($seriesInfo->episodes_min_episode_number || $seriesInfo->episodes_max_episode_number)
+                                        <p class="mb-1">
+                                            Plage d'épisodes:
+                                            <span class="text-light">{{ $seriesInfo->episodes_min_episode_number ?? '?' }} → {{ $seriesInfo->episodes_max_episode_number ?? '?' }}</span>
+                                        </p>
+                                    @endif
 
-                            @if ($categories->isNotEmpty())
-                                <p class="line-clamp-1">Catégories: <span class="text-slate-300">{{ $categories->implode(', ') }}</span></p>
-                            @endif
+                                    @if ($categories->isNotEmpty())
+                                        <p class="mb-1">Catégories: <span class="text-light">{{ $categories->implode(', ') }}</span></p>
+                                    @endif
 
-                            @if ($actors->isNotEmpty())
-                                <p class="line-clamp-1">Acteurs: <span class="text-slate-300">{{ $actors->implode(', ') }}</span></p>
-                            @endif
-                        </div>
-
-                        <p class="pt-1 text-sm text-indigo-300 transition group-hover:text-indigo-200">Voir les épisodes →</p>
-                    </div>
-                </a>
+                                    @if ($actors->isNotEmpty())
+                                        <p class="mb-0">Acteurs: <span class="text-light">{{ $actors->implode(', ') }}</span></p>
+                                    @endif
+                                </div>
+                            </div>
+                        </article>
+                    </a>
+                </div>
             @endforeach
         </div>
     @endif
