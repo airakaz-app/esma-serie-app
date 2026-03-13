@@ -23,7 +23,7 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-LIST_PAGE_URL = "https://n.esheaq.onl/watch/no9k6e3v89/see/"  # replace with your list page
+LIST_PAGE_URL = ""  # replace with your list page
 
 BASE_DIR = Path(__file__).resolve().parent
 JSON_FILE = str(BASE_DIR / "results.json")
