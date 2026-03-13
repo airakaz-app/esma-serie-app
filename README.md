@@ -81,9 +81,10 @@ Variables disponibles :
 - `SCRAPER_MAX_RETRIES` (défaut `3`)
 - `SCRAPER_HEADLESS` (`true` / `false`)
 - `SCRAPER_WEBDRIVER_URL` (défaut `http://127.0.0.1:9515`)
-- `SCRAPER_WEBDRIVER_AUTOSTART` (`true` / `false`, défaut `false`)
+- `SCRAPER_WEBDRIVER_AUTOSTART` (`true` / `false`, défaut `true`)
 - `SCRAPER_WEBDRIVER_BINARY` (défaut `chromedriver`)
 - `SCRAPER_WEBDRIVER_BOOT_TIMEOUT` (secondes, défaut `8`)
+- `SCRAPER_WEBDRIVER_FALLBACK_URLS` (CSV d'URLs testées automatiquement, ex. Selenium `:4444` / `:4444/wd/hub`)
 - `SCRAPER_ALLOWED_HOSTS` (CSV, défaut `vdesk`)
 
 ## Lancement
@@ -133,4 +134,7 @@ SCRAPER_WEBDRIVER_AUTOSTART=true
 SCRAPER_WEBDRIVER_BINARY=chromedriver
 ```
 
-Dans ce mode, le scraper teste `/status`, tente de lancer `chromedriver` en arrière-plan, puis réessaie avant d'échouer avec un message explicite.
+Le scraper teste automatiquement plusieurs endpoints WebDriver (`9515`, `4444`, `4444/wd/hub` + URL configurée), puis tente de lancer `chromedriver` si activé, avant d'échouer avec un message détaillant toutes les URLs testées.
+
+
+En cas d'échec d'auto-démarrage, consultez aussi `/tmp/scraper-chromedriver.log` et `storage/logs/laravel.log` pour le détail des tentatives (URLs testées, binaires, erreurs réseau, PID lancé).
