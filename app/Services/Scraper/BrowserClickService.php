@@ -40,6 +40,7 @@ class BrowserClickService
     public function resolveDownloadUrl(string $iframeUrl): array
     {
         $strategy = (string) config('scraper.browser_strategy', 'auto');
+        $pythonError = null;
 
         if (in_array($strategy, ['python', 'auto'], true)) {
             $pythonResult = $this->resolveWithPythonBridge($iframeUrl);
@@ -47,6 +48,8 @@ class BrowserClickService
             if ($pythonResult['success']) {
                 return $pythonResult;
             }
+
+            $pythonError = $pythonResult['error'];
 
             if ($strategy === 'python') {
                 return $pythonResult;
@@ -86,17 +89,23 @@ class BrowserClickService
                 'error' => null,
             ];
         } catch (\Throwable $e) {
+            $errorMessage = $e->getMessage();
+
+            if (is_string($pythonError) && $pythonError !== '') {
+                $errorMessage = sprintf('Python bridge en échec: %s | Fallback WebDriver: %s', $pythonError, $errorMessage);
+            }
+
             Log::error('Erreur BrowserClickService::resolveDownloadUrl', [
                 'iframe_url' => $iframeUrl,
                 'webdriver_url' => $this->activeWebDriverUrl,
-                'error' => $e->getMessage(),
+                'error' => $errorMessage,
             ]);
 
             return [
                 'success' => false,
                 'final_url' => null,
                 'final_html' => null,
-                'error' => $e->getMessage(),
+                'error' => $errorMessage,
             ];
         } finally {
             if ($sessionId !== null) {
@@ -142,7 +151,7 @@ class BrowserClickService
             config('scraper.headless', true) ? '1' : '0',
         ], base_path());
 
-        $process->setTimeout((int) config('scraper.python_timeout', 60));
+        $process->setTimeout($this->resolvePythonTimeout());
         $process->run();
 
         if (! $process->isSuccessful()) {
@@ -179,6 +188,16 @@ class BrowserClickService
             'final_html' => isset($decoded['final_html']) ? (string) $decoded['final_html'] : null,
             'error' => isset($decoded['error']) && is_string($decoded['error']) && $decoded['error'] !== '' ? $decoded['error'] : null,
         ];
+    }
+
+    private function resolvePythonTimeout(): float
+    {
+        $configuredTimeout = (float) config('scraper.python_timeout', 0);
+        if ($configuredTimeout > 0) {
+            return $configuredTimeout;
+        }
+
+        return max(((float) config('scraper.browser_timeout', 30)) + 30.0, 60.0);
     }
 
     /**
