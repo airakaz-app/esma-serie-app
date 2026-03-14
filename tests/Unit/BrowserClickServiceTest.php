@@ -31,4 +31,31 @@ class BrowserClickServiceTest extends TestCase
 
         $this->assertTrue($shouldFallback);
     }
+
+    public function test_it_uses_extended_default_python_timeout_when_not_configured(): void
+    {
+        config()->set('scraper.python_timeout', 0);
+        config()->set('scraper.browser_timeout', 30);
+
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('resolvePythonTimeout');
+
+        $timeout = $method->invoke($service);
+
+        $this->assertSame(180.0, $timeout);
+    }
+
+    public function test_it_enforces_minimum_safe_python_timeout_when_configured_value_is_too_low(): void
+    {
+        config()->set('scraper.python_timeout', 60);
+        config()->set('scraper.browser_timeout', 30);
+
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('resolvePythonTimeout');
+
+        $timeout = $method->invoke($service);
+
+        $this->assertSame(180.0, $timeout);
+    }
+
 }
