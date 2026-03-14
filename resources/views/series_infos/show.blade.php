@@ -82,7 +82,7 @@
         </div>
 
         @if ($seriesInfo->episodes->isNotEmpty())
-            <form method="POST" action="{{ route('series-infos.episodes.bulk-destroy', $seriesInfo) }}" id="bulkDeleteEpisodesForm" class="mb-3 d-flex flex-wrap align-items-center gap-2" onsubmit="return window.confirmBulkDeleteEpisodes();">
+            <form method="POST" action="{{ route('series-infos.episodes.bulk-destroy', $seriesInfo) }}" id="bulkDeleteEpisodesForm" class="mb-2 d-flex flex-wrap align-items-center gap-2" onsubmit="return window.confirmBulkDeleteEpisodes();">
                 @csrf
                 @method('DELETE')
                 <div class="form-check m-0">
@@ -92,7 +92,16 @@
                 <button type="submit" class="btn btn-outline-danger btn-sm" id="bulkDeleteEpisodesButton" disabled>
                     Supprimer la sélection
                 </button>
+                <button type="button" class="btn btn-outline-success btn-sm" id="bulkDownloadEpisodesButton" disabled>
+                    Télécharger la sélection
+                </button>
+                <button type="button" class="btn btn-success btn-sm" id="downloadSeriesButton">
+                    Télécharger toute la série
+                </button>
             </form>
+            <p class="small text-secondary mb-3" id="bulkDownloadStatus">
+                Sélectionnez un ou plusieurs épisodes pour lancer un téléchargement massif fiable (ou toute la série).
+            </p>
         @endif
 
         <div id="refreshEpisodesError" class="alert alert-danger d-none"></div>
@@ -144,21 +153,43 @@
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
                                 <div class="form-check">
-                                    <input class="form-check-input episode-checkbox" type="checkbox" name="episode_ids[]" value="{{ $episode->id }}" form="bulkDeleteEpisodesForm" id="episode-{{ $episode->id }}">
+                                    <input
+                                        class="form-check-input episode-checkbox"
+                                        type="checkbox"
+                                        name="episode_ids[]"
+                                        value="{{ $episode->id }}"
+                                        form="bulkDeleteEpisodesForm"
+                                        id="episode-{{ $episode->id }}"
+                                        data-episode-title="{{ $episode->title }}"
+                                        data-download-url="{{ $playableUrl ?? '' }}"
+                                    >
                                     <label class="form-check-label small text-secondary" for="episode-{{ $episode->id }}">Sélectionner</label>
                                 </div>
 
-                                <form method="POST" action="{{ route('series-infos.episodes.destroy', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}" onsubmit="return confirm('Supprimer cet épisode ?');">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="submit" class="btn btn-outline-danger btn-sm">Supprimer</button>
-                                </form>
+                                <div class="d-flex flex-column gap-2 align-items-end">
+                                    @if ($playableUrl)
+                                        <a
+                                            href="{{ route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}"
+                                            class="btn btn-outline-success btn-sm"
+                                            download
+                                            onclick="event.stopPropagation();"
+                                        >
+                                            Télécharger
+                                        </a>
+                                    @endif
+
+                                    <form method="POST" action="{{ route('series-infos.episodes.destroy', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}" onsubmit="event.stopPropagation(); return confirm('Supprimer cet épisode ?');">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">Supprimer</button>
+                                    </form>
+                                </div>
                             </div>
 
                             <h3 class="h6 card-title mb-2">{{ $episode->title }}</h3>
                             <p class="small mb-0 {{ $playableUrl ? 'text-info' : 'text-secondary' }}">
                                 @if ($playableUrl)
-                                    Lire maintenant
+                                    Lire ou télécharger maintenant
                                 @elseif (in_array($episode->status, [\App\Models\Episode::STATUS_PENDING, \App\Models\Episode::STATUS_IN_PROGRESS], true))
                                     Récupération en cours...
                                 @elseif ($episode->status === \App\Models\Episode::STATUS_ERROR)
@@ -280,25 +311,91 @@
 @endif
 
 <script>
-    const bulkDeleteEpisodesForm = document.getElementById('bulkDeleteEpisodesForm');
     const bulkDeleteEpisodesButton = document.getElementById('bulkDeleteEpisodesButton');
+    const bulkDownloadEpisodesButton = document.getElementById('bulkDownloadEpisodesButton');
+    const downloadSeriesButton = document.getElementById('downloadSeriesButton');
+    const bulkDownloadStatus = document.getElementById('bulkDownloadStatus');
     const selectAllEpisodes = document.getElementById('selectAllEpisodes');
     const episodeCheckboxes = Array.from(document.querySelectorAll('.episode-checkbox'));
 
+    const getSelectedEpisodes = () => {
+        return episodeCheckboxes.filter((checkbox) => checkbox.checked);
+    };
+
+    const getSelectedDownloadableEpisodes = () => {
+        return getSelectedEpisodes().filter((checkbox) => checkbox.dataset.downloadUrl !== '');
+    };
+
     const updateBulkDeleteState = () => {
-        if (!bulkDeleteEpisodesButton) {
+        if (!bulkDeleteEpisodesButton || !bulkDownloadEpisodesButton) {
             return;
         }
 
-        const selectedCount = episodeCheckboxes.filter((checkbox) => checkbox.checked).length;
+        const selectedCount = getSelectedEpisodes().length;
+        const downloadableCount = getSelectedDownloadableEpisodes().length;
+
         bulkDeleteEpisodesButton.disabled = selectedCount === 0;
+        bulkDownloadEpisodesButton.disabled = downloadableCount === 0;
+
         bulkDeleteEpisodesButton.textContent = selectedCount === 0
             ? 'Supprimer la sélection'
             : `Supprimer la sélection (${selectedCount})`;
+
+        bulkDownloadEpisodesButton.textContent = downloadableCount === 0
+            ? 'Télécharger la sélection'
+            : `Télécharger la sélection (${downloadableCount})`;
+    };
+
+    const notifyDownloadStatus = (message, type = 'info') => {
+        if (!bulkDownloadStatus) {
+            return;
+        }
+
+        bulkDownloadStatus.classList.remove('text-secondary', 'text-info', 'text-success', 'text-warning');
+
+        if (type === 'success') {
+            bulkDownloadStatus.classList.add('text-success');
+        } else if (type === 'warning') {
+            bulkDownloadStatus.classList.add('text-warning');
+        } else {
+            bulkDownloadStatus.classList.add('text-info');
+        }
+
+        bulkDownloadStatus.textContent = message;
+    };
+
+    const triggerSequentialDownloads = (downloadableEpisodes) => {
+        if (downloadableEpisodes.length === 0) {
+            notifyDownloadStatus('Aucun épisode sélectionné ne possède un lien final téléchargeable.', 'warning');
+            return;
+        }
+
+        notifyDownloadStatus(`Préparation de ${downloadableEpisodes.length} téléchargement(s)...`, 'info');
+
+        downloadableEpisodes.forEach((checkbox, index) => {
+            window.setTimeout(() => {
+                const link = document.createElement('a');
+                link.href = checkbox.dataset.downloadUrl;
+                link.setAttribute('download', '');
+                link.rel = 'noopener';
+                link.target = '_blank';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+
+                const progress = index + 1;
+
+                if (progress < downloadableEpisodes.length) {
+                    notifyDownloadStatus(`Téléchargement ${progress}/${downloadableEpisodes.length} lancé...`, 'info');
+                } else {
+                    notifyDownloadStatus(`Téléchargement massif terminé: ${downloadableEpisodes.length}/${downloadableEpisodes.length} lancés.`, 'success');
+                }
+            }, index * 800);
+        });
     };
 
     window.confirmBulkDeleteEpisodes = () => {
-        const selectedCount = episodeCheckboxes.filter((checkbox) => checkbox.checked).length;
+        const selectedCount = getSelectedEpisodes().length;
 
         if (selectedCount === 0) {
             return false;
@@ -306,6 +403,20 @@
 
         return window.confirm(`Supprimer ${selectedCount} épisode(s) sélectionné(s) ?`);
     };
+
+    if (bulkDownloadEpisodesButton) {
+        bulkDownloadEpisodesButton.addEventListener('click', () => {
+            const downloadableEpisodes = getSelectedDownloadableEpisodes();
+            triggerSequentialDownloads(downloadableEpisodes);
+        });
+    }
+
+    if (downloadSeriesButton) {
+        downloadSeriesButton.addEventListener('click', () => {
+            const downloadableEpisodes = episodeCheckboxes.filter((checkbox) => checkbox.dataset.downloadUrl !== '');
+            triggerSequentialDownloads(downloadableEpisodes);
+        });
+    }
 
     if (selectAllEpisodes) {
         selectAllEpisodes.addEventListener('change', (event) => {
