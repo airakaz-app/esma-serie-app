@@ -82,7 +82,7 @@
                             @endif
 
                             @if ($episode->episode_number)
-                                <span class="badge text-bg-danger position-absolute top-0 start-0 m-2 px-3 py-2">
+                                <span class="badge position-absolute top-0 start-0 m-2 px-3 py-2">
                                     Épisode {{ $episode->episode_number }}
                                 </span>
                             @endif
