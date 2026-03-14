@@ -57,6 +57,11 @@
         $episodesDone = $seriesInfo->episodes->where('status', \App\Models\Episode::STATUS_DONE)->count();
         $episodesInProgress = $seriesInfo->episodes->where('status', \App\Models\Episode::STATUS_IN_PROGRESS)->count();
         $episodesPending = $seriesInfo->episodes->where('status', \App\Models\Episode::STATUS_PENDING)->count();
+        $episodesPendingTitles = $seriesInfo->episodes
+            ->whereIn('status', [\App\Models\Episode::STATUS_PENDING, \App\Models\Episode::STATUS_IN_PROGRESS])
+            ->pluck('title')
+            ->take(12)
+            ->values();
         $isScrapingInProgress = ($episodesInProgress + $episodesPending) > 0;
         $progressPercent = $episodesTotal > 0 ? (int) round(($episodesDone / $episodesTotal) * 100) : 0;
     @endphp
@@ -115,6 +120,19 @@
                 <div class="progress" role="progressbar" aria-label="Progression de récupération">
                     <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: {{ $progressPercent }}%"></div>
                 </div>
+
+                <details class="mt-3" id="scrapeLogsContainer" data-opened="0">
+                    <summary class="small">Voir les étapes en temps réel</summary>
+
+                    <div class="mt-2 small">
+                        <ul class="mb-0 ps-3" id="scrapeLogsList">
+                            <li>Préparation de la récupération des épisodes...</li>
+                            @foreach ($episodesPendingTitles as $pendingTitle)
+                                <li>Téléchargement en cours: {{ $pendingTitle }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                </details>
             </div>
         @endif
 
@@ -224,6 +242,30 @@
     <script>
         const refreshEpisodesButton = document.getElementById('refreshEpisodesButton');
         const refreshEpisodesError = document.getElementById('refreshEpisodesError');
+        const scrapeLogsContainer = document.getElementById('scrapeLogsContainer');
+        const scrapeLogsList = document.getElementById('scrapeLogsList');
+        const knownLogMessages = new Set();
+
+        const addScrapeLog = (message) => {
+            if (!scrapeLogsList || !message || knownLogMessages.has(message)) {
+                return;
+            }
+
+            const item = document.createElement('li');
+            item.textContent = message;
+            scrapeLogsList.appendChild(item);
+            knownLogMessages.add(message);
+
+            if (scrapeLogsContainer && scrapeLogsContainer.open) {
+                scrapeLogsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        };
+
+        if (scrapeLogsList) {
+            Array.from(scrapeLogsList.querySelectorAll('li')).forEach((item) => {
+                knownLogMessages.add(item.textContent.trim());
+            });
+        }
 
         const setRefreshButtonState = (isLoading) => {
             refreshEpisodesButton.disabled = isLoading;
@@ -248,11 +290,23 @@
 
                 const data = await response.json();
 
+                const message = data.message ?? 'Récupération en cours...';
+                addScrapeLog(message);
+
+                if (data.currentEpisodeTitle) {
+                    addScrapeLog(`Téléchargement épisode: ${data.currentEpisodeTitle}`);
+                }
+
+                if (Number.isInteger(data.episodesProcessed) && Number.isInteger(data.episodesTotal) && data.episodesTotal > 0) {
+                    addScrapeLog(`Progression: ${data.episodesProcessed}/${data.episodesTotal}`);
+                }
+
                 if (data.state === 'error') {
                     throw new Error(data.lastError ?? data.message ?? 'Erreur pendant le refresh.');
                 }
 
                 if (data.state === 'completed') {
+                    addScrapeLog('Scraping terminé. Rechargement de la page...');
                     window.location.reload();
                 }
             };
@@ -278,6 +332,7 @@
             refreshEpisodesError.textContent = '';
             refreshEpisodesError.classList.add('d-none');
             setRefreshButtonState(true);
+            addScrapeLog('Lancement manuel du refresh des épisodes...');
 
             const formData = new FormData();
             formData.set('list_page_url', refreshEpisodesButton.dataset.listPageUrl ?? '');
