@@ -1,0 +1,34 @@
+<?php
+
+namespace Tests\Unit;
+
+use App\Services\Scraper\BrowserClickService;
+use Illuminate\Http\Client\Factory;
+use PHPUnit\Framework\TestCase;
+use ReflectionClass;
+
+class BrowserClickServiceTest extends TestCase
+{
+    public function test_it_skips_webdriver_fallback_when_python_error_is_driver_infrastructure_related(): void
+    {
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('shouldAttemptWebDriverFallback');
+
+        $shouldFallback = $method->invoke(
+            $service,
+            'RuntimeError: Aucun WebDriver disponible. Tentatives: remote:http://127.0.0.1:9515 => Failed to establish a new connection: [Errno 111] Connection refused'
+        );
+
+        $this->assertFalse($shouldFallback);
+    }
+
+    public function test_it_keeps_webdriver_fallback_for_generic_python_errors(): void
+    {
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('shouldAttemptWebDriverFallback');
+
+        $shouldFallback = $method->invoke($service, 'Unexpected runtime issue during bridge execution');
+
+        $this->assertTrue($shouldFallback);
+    }
+}
