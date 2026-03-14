@@ -62,6 +62,8 @@ class SeriesInfoListingTest extends TestCase
         $response->assertOk();
         $response->assertSee('Episode 1');
         $response->assertDontSee('Other Episode');
+        $response->assertSee('Refresh épisodes');
+        $response->assertSee('data-list-page-url="https://example.com/serie-2"', false);
     }
 
     public function test_series_info_page_links_episode_card_to_final_url(): void
