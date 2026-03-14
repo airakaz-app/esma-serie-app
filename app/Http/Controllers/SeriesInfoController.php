@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ScrapeSeriesInfoRequest;
+use App\Http\Requests\DeleteEpisodesRequest;
+use App\Models\Episode;
 use App\Jobs\RunScrapeEpisodesJob;
 use App\Models\SeriesInfo;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -108,6 +111,54 @@ class SeriesInfoController extends Controller
         ]);
 
         return response()->json($status);
+    }
+
+    public function destroy(SeriesInfo $seriesInfo): RedirectResponse
+    {
+        $seriesTitle = $seriesInfo->title ?: 'Sans titre';
+
+        $episodeIds = $seriesInfo->episodes()->pluck('id');
+
+        if ($episodeIds->isNotEmpty()) {
+            Episode::query()
+                ->whereIn('id', $episodeIds)
+                ->delete();
+        }
+
+        $seriesInfo->delete();
+
+        return redirect()
+            ->route('series-infos.index')
+            ->with('status', sprintf('La série "%s" a été supprimée.', $seriesTitle));
+    }
+
+    public function destroyEpisode(SeriesInfo $seriesInfo, Episode $episode): RedirectResponse
+    {
+        if ($episode->series_info_id !== $seriesInfo->id) {
+            abort(404);
+        }
+
+        $episodeTitle = $episode->title;
+
+        $episode->delete();
+
+        return redirect()
+            ->route('series-infos.show', $seriesInfo)
+            ->with('status', sprintf('L\'épisode "%s" a été supprimé.', $episodeTitle));
+    }
+
+    public function bulkDestroyEpisodes(DeleteEpisodesRequest $request, SeriesInfo $seriesInfo): RedirectResponse
+    {
+        $episodeIds = $request->validated('episode_ids');
+
+        $deletedCount = Episode::query()
+            ->where('series_info_id', $seriesInfo->id)
+            ->whereIn('id', $episodeIds)
+            ->delete();
+
+        return redirect()
+            ->route('series-infos.show', $seriesInfo)
+            ->with('status', sprintf('%d épisode(s) supprimé(s).', $deletedCount));
     }
 
     private function trackingCacheKey(string $trackingKey): string

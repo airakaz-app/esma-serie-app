@@ -167,4 +167,111 @@ class SeriesInfoListingTest extends TestCase
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['list_page_url']);
     }
+
+    public function test_series_can_be_deleted_with_linked_episodes(): void
+    {
+        $seriesInfo = SeriesInfo::query()->create([
+            'source_episode_page_url' => 'https://example.com/serie-delete/episode-1/see/',
+            'series_page_url' => 'https://example.com/serie-delete',
+            'title' => 'Serie Delete',
+        ]);
+
+        $episode = Episode::query()->create([
+            'series_info_id' => $seriesInfo->id,
+            'title' => 'Episode to delete',
+            'page_url' => 'https://example.com/serie-delete/episode-1/see/',
+        ]);
+
+        EpisodeServer::query()->create([
+            'episode_id' => $episode->id,
+            'server_name' => 'Server',
+            'host' => 'Host',
+            'server_page_url' => 'https://example.com/server',
+            'status' => EpisodeServer::STATUS_DONE,
+        ]);
+
+        $response = $this->delete(route('series-infos.destroy', $seriesInfo));
+
+        $response->assertRedirect(route('series-infos.index'));
+        $this->assertDatabaseMissing('series_infos', ['id' => $seriesInfo->id]);
+        $this->assertDatabaseMissing('episodes', ['id' => $episode->id]);
+        $this->assertDatabaseCount('episode_servers', 0);
+    }
+
+    public function test_episode_can_be_deleted_from_series_page(): void
+    {
+        $seriesInfo = SeriesInfo::query()->create([
+            'source_episode_page_url' => 'https://example.com/serie-ep-delete/episode-1/see/',
+            'series_page_url' => 'https://example.com/serie-ep-delete',
+            'title' => 'Serie episode delete',
+        ]);
+
+        $episode = Episode::query()->create([
+            'series_info_id' => $seriesInfo->id,
+            'title' => 'Episode to remove',
+            'page_url' => 'https://example.com/serie-ep-delete/episode-1/see/',
+        ]);
+
+        $response = $this->delete(route('series-infos.episodes.destroy', [
+            'seriesInfo' => $seriesInfo,
+            'episode' => $episode,
+        ]));
+
+        $response->assertRedirect(route('series-infos.show', $seriesInfo));
+        $this->assertDatabaseMissing('episodes', ['id' => $episode->id]);
+    }
+
+    public function test_multiple_episodes_can_be_deleted_in_bulk(): void
+    {
+        $seriesInfo = SeriesInfo::query()->create([
+            'source_episode_page_url' => 'https://example.com/serie-bulk-delete/episode-1/see/',
+            'series_page_url' => 'https://example.com/serie-bulk-delete',
+            'title' => 'Serie bulk delete',
+        ]);
+
+        $episodeOne = Episode::query()->create([
+            'series_info_id' => $seriesInfo->id,
+            'title' => 'Episode 1',
+            'page_url' => 'https://example.com/serie-bulk-delete/episode-1/see/',
+        ]);
+
+        $episodeTwo = Episode::query()->create([
+            'series_info_id' => $seriesInfo->id,
+            'title' => 'Episode 2',
+            'page_url' => 'https://example.com/serie-bulk-delete/episode-2/see/',
+        ]);
+
+        $keptEpisode = Episode::query()->create([
+            'series_info_id' => $seriesInfo->id,
+            'title' => 'Episode kept',
+            'page_url' => 'https://example.com/serie-bulk-delete/episode-3/see/',
+        ]);
+
+        $response = $this->delete(route('series-infos.episodes.bulk-destroy', $seriesInfo), [
+            'episode_ids' => [$episodeOne->id, $episodeTwo->id],
+        ]);
+
+        $response->assertRedirect(route('series-infos.show', $seriesInfo));
+        $this->assertDatabaseMissing('episodes', ['id' => $episodeOne->id]);
+        $this->assertDatabaseMissing('episodes', ['id' => $episodeTwo->id]);
+        $this->assertDatabaseHas('episodes', ['id' => $keptEpisode->id]);
+    }
+
+    public function test_bulk_delete_requires_at_least_one_episode_selection(): void
+    {
+        $seriesInfo = SeriesInfo::query()->create([
+            'source_episode_page_url' => 'https://example.com/serie-bulk-validation/episode-1/see/',
+            'series_page_url' => 'https://example.com/serie-bulk-validation',
+            'title' => 'Serie bulk validation',
+        ]);
+
+        $response = $this
+            ->from(route('series-infos.show', $seriesInfo))
+            ->delete(route('series-infos.episodes.bulk-destroy', $seriesInfo), [
+                'episode_ids' => [],
+            ]);
+
+        $response->assertRedirect(route('series-infos.show', $seriesInfo));
+        $response->assertSessionHasErrors(['episode_ids']);
+    }
 }

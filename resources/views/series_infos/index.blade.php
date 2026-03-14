@@ -10,6 +10,10 @@
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
 <div class="container py-4 py-lg-5">
+    @if (session('status'))
+        <div class="alert alert-success mb-4">{{ session('status') }}</div>
+    @endif
+
     <header class="mb-4 mb-lg-5 d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-3">
         <div>
             <h1 class="display-6 fw-bold mb-2">Séries disponibles</h1>
@@ -49,8 +53,7 @@
                 @endphp
 
                 <div class="col">
-                    <a href="{{ route('series-infos.show', $seriesInfo) }}" class="text-decoration-none d-block h-100">
-                        <article class="card h-100 border-0 shadow-sm bg-dark text-light">
+                    <article class="card h-100 border-0 shadow-sm bg-dark text-light">
                             <div class="ratio ratio-16x9 bg-black">
                                 @if ($seriesInfo->cover_image_url)
                                     <img
@@ -66,8 +69,19 @@
 
                             <div class="card-body d-flex flex-column gap-2">
                                 <div class="d-flex align-items-start justify-content-between gap-2">
-                                    <h2 class="h5 card-title mb-0">{{ $seriesInfo->title ?: 'Sans titre' }}</h2>
+                                    <div class="position-relative pe-2">
+                                        <h2 class="h5 card-title mb-0">{{ $seriesInfo->title ?: 'Sans titre' }}</h2>
+                                        <a href="{{ route('series-infos.show', $seriesInfo) }}" class="stretched-link" aria-label="Voir la série {{ $seriesInfo->title ?: 'Sans titre' }}"></a>
+                                    </div>
                                     <span class="badge text-bg-primary">{{ $seriesInfo->episodes_count }} épisode(s)</span>
+                                </div>
+
+                                <div class="mt-auto d-flex justify-content-end">
+                                    <form method="POST" action="{{ route('series-infos.destroy', $seriesInfo) }}" onsubmit="return confirm('Supprimer cette série et tous ses épisodes ?');">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn btn-outline-danger btn-sm position-relative" style="z-index: 2;">Supprimer</button>
+                                    </form>
                                 </div>
 
                                 {{-- @if ($seriesInfo->story)
@@ -91,8 +105,7 @@
                                     @endif
                                 </div> --}}
                             </div>
-                        </article>
-                    </a>
+                    </article>
                 </div>
             @endforeach
         </div>
