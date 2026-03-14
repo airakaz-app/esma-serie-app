@@ -5,10 +5,13 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ScrapeSeriesInfoRequest;
 use App\Http\Requests\DeleteEpisodesRequest;
 use App\Jobs\RunScrapeEpisodesJob;
+use App\Models\Episode;
 use App\Models\SeriesInfo;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Http;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -152,6 +155,70 @@ class SeriesInfoController extends Controller
         return redirect()
             ->route('series-infos.show', $seriesInfo)
             ->with('status', sprintf('%d épisode(s) supprimé(s).', $deletedCount));
+    }
+
+    public function downloadEpisode(SeriesInfo $seriesInfo, Episode $episode): StreamedResponse|RedirectResponse
+    {
+        if ($episode->series_info_id !== $seriesInfo->id) {
+            abort(404);
+        }
+
+        $finalUrl = $episode->servers()
+            ->whereNotNull('final_url')
+            ->where('final_url', '!=', '')
+            ->orderByDesc('id')
+            ->value('final_url');
+
+        if (! is_string($finalUrl) || $finalUrl === '') {
+            return redirect()
+                ->route('series-infos.show', $seriesInfo)
+                ->withErrors([
+                    'download' => sprintf('Le lien de téléchargement est indisponible pour "%s".', $episode->title),
+                ]);
+        }
+
+        $downloadResponse = Http::withOptions([
+            'stream' => true,
+            'allow_redirects' => true,
+        ])->get($finalUrl);
+
+        if (! $downloadResponse->successful()) {
+            return redirect()
+                ->route('series-infos.show', $seriesInfo)
+                ->withErrors([
+                    'download' => sprintf('Impossible de télécharger "%s" pour le moment.', $episode->title),
+                ]);
+        }
+
+        $fileName = $this->downloadFileName($episode, $finalUrl);
+        $contentType = $downloadResponse->header('Content-Type') ?: 'application/octet-stream';
+        $bodyStream = $downloadResponse->toPsrResponse()->getBody();
+
+        return response()->streamDownload(function () use ($bodyStream): void {
+            while (! $bodyStream->eof()) {
+                echo $bodyStream->read(1024 * 1024);
+                flush();
+            }
+        }, $fileName, [
+            'Content-Type' => $contentType,
+        ]);
+    }
+
+    private function downloadFileName(Episode $episode, string $finalUrl): string
+    {
+        $extension = strtolower((string) pathinfo(parse_url($finalUrl, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
+
+        if ($extension === '') {
+            $extension = 'mp4';
+        }
+
+        $baseName = Str::slug($episode->title ?: sprintf('episode-%d', $episode->id));
+
+        if ($baseName === '') {
+            $baseName = sprintf('episode-%d', $episode->id);
+        }
+
+        return sprintf('%s.%s', $baseName, $extension);
     }
 
     private function trackingCacheKey(string $trackingKey): string

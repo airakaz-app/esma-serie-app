@@ -9,3 +9,4 @@ Route::get('/series-infos/{seriesInfo}', [SeriesInfoController::class, 'show'])-
 Route::delete('/series-infos/{seriesInfo}', [SeriesInfoController::class, 'destroy'])->name('series-infos.destroy');
 Route::delete('/series-infos/{seriesInfo}/episodes/{episode}', [SeriesInfoController::class, 'destroyEpisode'])->name('series-infos.episodes.destroy');
 Route::delete('/series-infos/{seriesInfo}/episodes', [SeriesInfoController::class, 'bulkDestroyEpisodes'])->name('series-infos.episodes.bulk-destroy');
+Route::get('/series-infos/{seriesInfo}/episodes/{episode}/download', [SeriesInfoController::class, 'downloadEpisode'])->name('series-infos.episodes.download');
