@@ -452,21 +452,6 @@ class BrowserClickService
 
         $normalizedError = mb_strtolower($pythonError);
 
-        $recoverablePatterns = [
-            'aucun webdriver disponible',
-            'webdriver indisponible',
-            'unable to obtain driver for chrome',
-            'failed to establish a new connection',
-            'connection refused',
-            'chromedriver unexpectedly exited',
-        ];
-
-        foreach ($recoverablePatterns as $pattern) {
-            if (str_contains($normalizedError, $pattern)) {
-                return true;
-            }
-        }
-
         $nonRecoverablePatterns = [
             'timeoutexception',
             'nosuchelementexception',
@@ -475,13 +460,53 @@ class BrowserClickService
             'method_free',
         ];
 
-        foreach ($nonRecoverablePatterns as $pattern) {
+        $infraPatterns = [
+            'webdriver',
+            'chromedriver',
+            'selenium-manager',
+            'unable to obtain driver',
+            'failed to establish a new connection',
+            'connection refused',
+            'status code was: -5',
+        ];
+
+        $hasInfrastructureMarker = false;
+
+        foreach ($infraPatterns as $pattern) {
             if (str_contains($normalizedError, $pattern)) {
-                return false;
+                $hasInfrastructureMarker = true;
+                break;
             }
         }
 
-        return true;
+        if (! $hasInfrastructureMarker) {
+            foreach ($nonRecoverablePatterns as $pattern) {
+                if (str_contains($normalizedError, $pattern)) {
+                    return false;
+                }
+            }
+        }
+
+        $recoverablePatterns = [
+            'aucun webdriver disponible',
+            'webdriver indisponible',
+            'unable to obtain driver for chrome',
+            'failed to establish a new connection',
+            'connection refused',
+            'chromedriver unexpectedly exited',
+            'status code was: -5',
+        ];
+
+        foreach ($recoverablePatterns as $pattern) {
+            if (str_contains($normalizedError, $pattern)) {
+                return true;
+            }
+        }
+
+        return ! in_array(true, array_map(
+            static fn (string $pattern): bool => str_contains($normalizedError, $pattern),
+            $nonRecoverablePatterns
+        ), true);
     }
 
     /**

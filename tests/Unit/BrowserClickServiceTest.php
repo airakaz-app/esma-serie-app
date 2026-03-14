@@ -110,6 +110,19 @@ class BrowserClickServiceTest extends TestCase
         $this->assertTrue($shouldFallback);
     }
 
+    public function test_it_does_not_skip_webdriver_fallback_when_selenium_manager_returns_status_code_minus_five(): void
+    {
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('shouldAttemptWebDriverFallback');
+
+        $shouldFallback = $method->invoke(
+            $service,
+            'RuntimeError: Service /home/user/.cache/selenium/chromedriver/linux64/146.0.7680.80/chromedriver unexpectedly exited. Status code was: -5'
+        );
+
+        $this->assertTrue($shouldFallback);
+    }
+
     public function test_it_uses_extended_default_python_timeout_when_not_configured(): void
     {
         config()->set('scraper.python_timeout', 0);
