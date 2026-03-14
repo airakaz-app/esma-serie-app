@@ -144,11 +144,7 @@
                 @endphp
 
                 <div class="col">
-                    @if ($playableUrl)
-                        <a href="{{ $playableUrl }}" target="_blank" class="text-decoration-none d-block h-100">
-                    @endif
-
-                    <article class="card h-100 border-0 shadow-sm bg-dark text-light {{ $playableUrl ? 'cursor-pointer' : '' }}">
+                    <article class="card h-100 border-0 shadow-sm bg-dark text-light">
                         <div class="ratio ratio-16x9 bg-black position-relative">
                             @if ($seriesInfo->cover_image_url)
                                 <img
@@ -179,7 +175,7 @@
                                         form="bulkDeleteEpisodesForm"
                                         id="episode-{{ $episode->id }}"
                                         data-episode-title="{{ $episode->title }}"
-                                        data-download-url="{{ $playableUrl ?? '' }}"
+                                        data-download-url="{{ $playableUrl ? route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) : '' }}"
                                     >
                                     <label class="form-check-label small text-secondary" for="episode-{{ $episode->id }}">Sélectionner</label>
                                 </div>
@@ -187,16 +183,23 @@
                                 <div class="d-flex flex-column gap-2 align-items-end">
                                     @if ($playableUrl)
                                         <a
+                                            href="{{ $playableUrl }}"
+                                            target="_blank"
+                                            rel="noopener"
+                                            class="btn btn-outline-info btn-sm"
+                                        >
+                                            Lire
+                                        </a>
+
+                                        <a
                                             href="{{ route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}"
                                             class="btn btn-outline-success btn-sm"
-                                            download
-                                            onclick="event.stopPropagation();"
                                         >
                                             Télécharger
                                         </a>
                                     @endif
 
-                                    <form method="POST" action="{{ route('series-infos.episodes.destroy', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}" onsubmit="event.stopPropagation(); return confirm('Supprimer cet épisode ?');">
+                                    <form method="POST" action="{{ route('series-infos.episodes.destroy', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}" onsubmit="return confirm('Supprimer cet épisode ?');">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="btn btn-outline-danger btn-sm">Supprimer</button>
@@ -218,10 +221,6 @@
                             </p>
                         </div>
                     </article>
-
-                    @if ($playableUrl)
-                        </a>
-                    @endif
                 </div>
             @empty
                 <p class="rounded-3 border border-secondary-subtle bg-dark-subtle p-4 text-secondary">Aucun épisode lié à cette série.</p>
@@ -474,14 +473,14 @@
 
         downloadableEpisodes.forEach((checkbox, index) => {
             window.setTimeout(() => {
-                const link = document.createElement('a');
-                link.href = checkbox.dataset.downloadUrl;
-                link.setAttribute('download', '');
-                link.rel = 'noopener';
-                link.target = '_blank';
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
+                const iframe = document.createElement('iframe');
+                iframe.src = checkbox.dataset.downloadUrl;
+                iframe.classList.add('d-none');
+                document.body.appendChild(iframe);
+
+                window.setTimeout(() => {
+                    iframe.remove();
+                }, 15000);
 
                 const progress = index + 1;
 
