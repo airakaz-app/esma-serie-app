@@ -10,6 +10,7 @@ use App\Services\Scraper\EpisodeListScraper;
 use App\Services\Scraper\EpisodePageScraper;
 use App\Services\Scraper\SeriesInfoScraper;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -66,13 +67,14 @@ class ScrapeEpisodesCommand extends Command
         $serversProcessed = 0;
         $limit = $this->option('limit') ? (int) $this->option('limit') : null;
 
-        $episodes = $this->episodeQuery()->get();
-        $this->episodesTotal = $episodes->count();
+        $episodeQuery = $this->episodeQuery();
+
+        $this->episodesTotal = (clone $episodeQuery)->count();
         $this->episodesProcessed = 0;
         $this->info(sprintf('Épisodes à traiter: %d', $this->episodesTotal));
         $this->updateTrackingStatus('running', 'Récupération des épisodes en cours...');
 
-        foreach ($episodes as $episode) {
+        foreach ($episodeQuery->lazyById(100) as $episode) {
             $this->currentEpisodeTitle = $episode->title;
             $this->line("- Épisode #{$episode->id}: {$episode->title}");
             $this->processEpisode($episode, $serversProcessed, $limit);
@@ -125,9 +127,9 @@ class ScrapeEpisodesCommand extends Command
         }
     }
 
-    private function episodeQuery()
+    private function episodeQuery(): Builder
     {
-        $query = Episode::query()->orderBy('id');
+        $query = Episode::query();
 
         if ($episodeId = $this->option('episode-id')) {
             $query->whereKey((int) $episodeId);
@@ -384,11 +386,13 @@ class ScrapeEpisodesCommand extends Command
                 'trace_preview' => mb_substr($e->getTraceAsString(), 0, 1200),
             ]);
         } finally {
+            $freshServer = $server->fresh();
+
             Log::info('Fin traitement serveur épisode.', [
                 'server_id' => $server->id,
-                'status' => $server->fresh()?->status,
-                'retry_count' => $server->fresh()?->retry_count,
-                'error_message' => $server->fresh()?->error_message,
+                'status' => $freshServer?->status,
+                'retry_count' => $freshServer?->retry_count,
+                'error_message' => $freshServer?->error_message,
             ]);
         }
     }
@@ -400,7 +404,10 @@ class ScrapeEpisodesCommand extends Command
             ->groupBy('status')
             ->pluck('aggregate', 'status');
 
-        if (($states[EpisodeServer::STATUS_DONE] ?? 0) > 0 && ($states[EpisodeServer::STATUS_DONE] ?? 0) === $episode->servers()->count()) {
+        $totalServers = (int) $states->sum();
+        $doneServers = (int) ($states[EpisodeServer::STATUS_DONE] ?? 0);
+
+        if ($doneServers > 0 && $doneServers === $totalServers) {
             $status = Episode::STATUS_DONE;
         } elseif (($states[EpisodeServer::STATUS_ERROR] ?? 0) > 0 && ($states[EpisodeServer::STATUS_PENDING] ?? 0) === 0 && ($states[EpisodeServer::STATUS_IN_PROGRESS] ?? 0) === 0) {
             $status = Episode::STATUS_ERROR;

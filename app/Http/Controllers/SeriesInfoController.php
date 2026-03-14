@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ScrapeSeriesInfoRequest;
 use App\Http\Requests\DeleteEpisodesRequest;
-use App\Models\Episode;
 use App\Jobs\RunScrapeEpisodesJob;
 use App\Models\SeriesInfo;
 use Illuminate\Contracts\View\View;
@@ -117,13 +116,7 @@ class SeriesInfoController extends Controller
     {
         $seriesTitle = $seriesInfo->title ?: 'Sans titre';
 
-        $episodeIds = $seriesInfo->episodes()->pluck('id');
-
-        if ($episodeIds->isNotEmpty()) {
-            Episode::query()
-                ->whereIn('id', $episodeIds)
-                ->delete();
-        }
+        $seriesInfo->episodes()->delete();
 
         $seriesInfo->delete();
 
