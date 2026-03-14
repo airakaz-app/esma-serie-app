@@ -71,6 +71,13 @@ class SeriesInfoController extends Controller
             'currentEpisodeTitle' => null,
             'lastError' => null,
             'updatedAt' => now()->toIso8601String(),
+            'events' => [
+                [
+                    'time' => now()->format('H:i:s'),
+                    'level' => 'info',
+                    'message' => 'Scraping initialisé.',
+                ],
+            ],
         ], now()->addHours(2));
 
         RunScrapeEpisodesJob::dispatch($listPageUrl, $trackingKey, $retryErrors);

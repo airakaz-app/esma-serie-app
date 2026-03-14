@@ -121,14 +121,14 @@
                     <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: {{ $progressPercent }}%"></div>
                 </div>
 
-                <details class="mt-3" id="scrapeLogsContainer" data-opened="0">
-                    <summary class="small">Voir les étapes en temps réel</summary>
+                <details class="mt-3" id="scrapeLogsContainer">
+                    <summary class="small fw-semibold">Voir le détail technique en temps réel</summary>
 
                     <div class="mt-2 small">
                         <ul class="mb-0 ps-3" id="scrapeLogsList">
-                            <li>Préparation de la récupération des épisodes...</li>
+                            <li>[Init] Préparation de la récupération des épisodes...</li>
                             @foreach ($episodesPendingTitles as $pendingTitle)
-                                <li>Téléchargement en cours: {{ $pendingTitle }}</li>
+                                <li>[File d'attente] Téléchargement en cours: {{ $pendingTitle }}</li>
                             @endforeach
                         </ul>
                     </div>
@@ -246,19 +246,62 @@
         const scrapeLogsList = document.getElementById('scrapeLogsList');
         const knownLogMessages = new Set();
 
-        const addScrapeLog = (message) => {
-            if (!scrapeLogsList || !message || knownLogMessages.has(message)) {
+        const levelPrefix = {
+            info: '[Info]',
+            success: '[OK]',
+            error: '[Erreur]',
+        };
+
+        const formatLogMessage = (message, level = 'info', time = null) => {
+            const safeMessage = String(message ?? '').trim();
+            if (!safeMessage) {
+                return '';
+            }
+
+            const prefix = levelPrefix[level] ?? '[Info]';
+            const timePrefix = time ? `[${time}] ` : '';
+
+            return `${timePrefix}${prefix} ${safeMessage}`;
+        };
+
+        const addScrapeLog = (message, level = 'info', time = null) => {
+            if (!scrapeLogsList) {
+                return;
+            }
+
+            const normalizedMessage = formatLogMessage(message, level, time);
+            if (!normalizedMessage || knownLogMessages.has(normalizedMessage)) {
                 return;
             }
 
             const item = document.createElement('li');
-            item.textContent = message;
+            item.textContent = normalizedMessage;
             scrapeLogsList.appendChild(item);
-            knownLogMessages.add(message);
+            knownLogMessages.add(normalizedMessage);
+
+            while (scrapeLogsList.children.length > 40) {
+                const firstItem = scrapeLogsList.firstElementChild;
+                if (!firstItem) {
+                    break;
+                }
+
+                knownLogMessages.delete(firstItem.textContent ?? '');
+                firstItem.remove();
+            }
 
             if (scrapeLogsContainer && scrapeLogsContainer.open) {
                 scrapeLogsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
+        };
+
+        const syncEventsFromStatus = (events) => {
+            if (!Array.isArray(events)) {
+                return;
+            }
+
+            events.forEach((event) => {
+                addScrapeLog(event?.message ?? '', event?.level ?? 'info', event?.time ?? null);
+            });
         };
 
         if (scrapeLogsList) {
@@ -289,6 +332,8 @@
                 }
 
                 const data = await response.json();
+
+                syncEventsFromStatus(data.events);
 
                 const message = data.message ?? 'Récupération en cours...';
                 addScrapeLog(message);
