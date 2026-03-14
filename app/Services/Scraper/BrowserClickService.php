@@ -5,6 +5,7 @@ namespace App\Services\Scraper;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Str;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
@@ -41,6 +42,24 @@ class BrowserClickService
     public function resolveDownloadUrl(string $iframeUrl): array
     {
         $strategy = (string) config('scraper.browser_strategy', 'auto');
+
+        if (in_array($strategy, ['http', 'auto'], true)) {
+            $httpResult = $this->resolveWithHttpOnlyStrategy($iframeUrl);
+
+            if ($httpResult['success']) {
+                return $httpResult;
+            }
+
+            if ($strategy === 'http') {
+                return $httpResult;
+            }
+
+            Log::warning('Fallback vers navigateur après échec stratégie HTTP-only.', [
+                'iframe_url' => $iframeUrl,
+                'http_error' => $httpResult['error'],
+            ]);
+        }
+
         $pythonError = null;
 
         if (in_array($strategy, ['python', 'auto'], true)) {
@@ -122,6 +141,187 @@ class BrowserClickService
                 $this->client()->delete("/session/{$sessionId}");
             }
         }
+    }
+
+    /**
+     * @return array{success:bool,final_url:?string,final_html:?string,error:?string}
+     */
+    private function resolveWithHttpOnlyStrategy(string $iframeUrl): array
+    {
+        try {
+            $response = $this->httpClientForScraping()
+                ->get($iframeUrl)
+                ->throw();
+        } catch (\Throwable $exception) {
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => null,
+                'error' => sprintf('HTTP-only: impossible de récupérer l\'iframe (%s).', $exception->getMessage()),
+            ];
+        }
+
+        $html = (string) $response->body();
+        $resolvedUrl = $this->extractFinalUrlFromHttpHtml($html, $iframeUrl);
+
+        if ($resolvedUrl === null) {
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => $html,
+                'error' => 'HTTP-only: aucun endpoint exploitable détecté dans l’iframe.',
+            ];
+        }
+
+        return [
+            'success' => true,
+            'final_url' => $resolvedUrl,
+            'final_html' => $html,
+            'error' => null,
+        ];
+    }
+
+    private function extractFinalUrlFromHttpHtml(string $html, string $baseUrl): ?string
+    {
+        $urlCandidates = $this->extractUrlCandidates($html, $baseUrl);
+
+        if ($urlCandidates !== []) {
+            return $urlCandidates[0];
+        }
+
+        $tokenCandidates = $this->extractTokenCandidates($html);
+        foreach ($tokenCandidates as $tokenCandidate) {
+            $queryGlue = Str::contains($baseUrl, '?') ? '&' : '?';
+            $constructedCandidate = $baseUrl.$queryGlue.$tokenCandidate;
+
+            if (filter_var($constructedCandidate, FILTER_VALIDATE_URL)) {
+                return $constructedCandidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function extractUrlCandidates(string $html, string $baseUrl): array
+    {
+        $patterns = [
+            '/https?:\\/\\/[^"\'\s<>]+/i',
+            '/["\'](?:url|file|src|href|link|download|endpoint|api|ajax|xhr)["\']\s*[:=]\s*["\']([^"\']+)["\']/i',
+            '/fetch\s*\(\s*["\']([^"\']+)["\']/i',
+            '/axios\.(?:get|post)\s*\(\s*["\']([^"\']+)["\']/i',
+            '/(?:window\.)?location(?:\.href)?\s*=\s*["\']([^"\']+)["\']/i',
+        ];
+
+        $candidates = [];
+
+        foreach ($patterns as $pattern) {
+            preg_match_all($pattern, $html, $matches);
+            foreach ($matches[1] ?? $matches[0] ?? [] as $rawCandidate) {
+                $normalized = trim((string) $rawCandidate);
+                if ($normalized === '' || Str::startsWith($normalized, ['#', 'javascript:'])) {
+                    continue;
+                }
+
+                $absolute = $this->toAbsoluteUrl($normalized, $baseUrl);
+
+                if ($absolute === null || ! filter_var($absolute, FILTER_VALIDATE_URL)) {
+                    continue;
+                }
+
+                if ($this->looksLikeDownloadCandidate($absolute)) {
+                    $candidates[] = $absolute;
+                }
+            }
+        }
+
+        return array_values(array_unique($candidates));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function extractTokenCandidates(string $html): array
+    {
+        $patterns = [
+            '/["\'](?:token|signature|sig|hash|key|auth)["\']\s*[:=]\s*["\']([^"\']+)["\']/i',
+            '/(?:token|signature|sig|hash|key|auth)=([A-Za-z0-9._\-]+)/i',
+        ];
+
+        $candidates = [];
+
+        foreach ($patterns as $pattern) {
+            preg_match_all($pattern, $html, $matches);
+            foreach ($matches[1] ?? [] as $value) {
+                $normalized = trim((string) $value);
+                if ($normalized === '') {
+                    continue;
+                }
+
+                $candidates[] = sprintf('token=%s', urlencode($normalized));
+            }
+        }
+
+        return array_values(array_unique($candidates));
+    }
+
+    private function looksLikeDownloadCandidate(string $url): bool
+    {
+        $normalizedUrl = Str::lower($url);
+
+        return Str::contains($normalizedUrl, [
+            '.mp4',
+            '.m3u8',
+            '.mkv',
+            '.avi',
+            '.mov',
+            'download',
+            'stream',
+            'video',
+            'file=',
+            'token=',
+            'signature=',
+            'sig=',
+        ]);
+    }
+
+    private function toAbsoluteUrl(string $candidateUrl, string $baseUrl): ?string
+    {
+        if (filter_var($candidateUrl, FILTER_VALIDATE_URL)) {
+            return $candidateUrl;
+        }
+
+        if (Str::startsWith($candidateUrl, '//')) {
+            $scheme = parse_url($baseUrl, PHP_URL_SCHEME) ?: 'https';
+
+            return sprintf('%s:%s', $scheme, $candidateUrl);
+        }
+
+        if (! Str::startsWith($candidateUrl, ['/'])) {
+            return null;
+        }
+
+        $baseParts = parse_url($baseUrl);
+        if (! is_array($baseParts) || ! isset($baseParts['host'])) {
+            return null;
+        }
+
+        $scheme = $baseParts['scheme'] ?? 'https';
+        $portPart = isset($baseParts['port']) ? ':'.$baseParts['port'] : '';
+
+        return sprintf('%s://%s%s%s', $scheme, $baseParts['host'], $portPart, $candidateUrl);
+    }
+
+    private function httpClientForScraping(): PendingRequest
+    {
+        return $this->http
+            ->withHeaders([
+                'User-Agent' => 'Mozilla/5.0',
+                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            ])
+            ->timeout((int) config('scraper.http_timeout', 20));
     }
 
     private function shouldAttemptWebDriverFallback(?string $pythonError): bool
