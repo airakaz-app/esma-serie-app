@@ -178,20 +178,20 @@ class BrowserClickService
             ];
         }
 
-        $currentUrl = $response->effectiveUri()?->getUri() ?? $iframeUrl;
+        $currentUrl = (string) ($response->effectiveUri() ?? $iframeUrl);
         $html = (string) $response->body();
 
         $stepOne = $this->findFormStepByTriggerId($html, $currentUrl, 'method_free');
         if ($stepOne !== null) {
             $response = $this->submitHttpStep($stepOne, $iframeUrl);
-            $currentUrl = $response->effectiveUri()?->getUri() ?? $stepOne['action'];
+            $currentUrl = (string) ($response->effectiveUri() ?? $stepOne['action']);
             $html = (string) $response->body();
         }
 
         $stepTwo = $this->findFormStepByTriggerId($html, $currentUrl, 'downloadbtn');
         if ($stepTwo !== null) {
             $response = $this->submitHttpStep($stepTwo, $iframeUrl);
-            $currentUrl = $response->effectiveUri()?->getUri() ?? $stepTwo['action'];
+            $currentUrl = (string) ($response->effectiveUri() ?? $stepTwo['action']);
             $html = (string) $response->body();
         }
 
