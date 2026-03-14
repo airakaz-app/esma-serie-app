@@ -245,6 +245,103 @@ class SeriesInfoListingTest extends TestCase
         $response->assertSessionHasErrors(['download']);
     }
 
+
+    public function test_series_info_page_displays_download_actions(): void
+    {
+        $seriesInfo = SeriesInfo::query()->create([
+            'source_episode_page_url' => 'https://example.com/serie-download-actions/episode-1/see/',
+            'series_page_url' => 'https://example.com/serie-download-actions',
+            'title' => 'Serie Download Actions',
+        ]);
+
+        $episode = Episode::query()->create([
+            'series_info_id' => $seriesInfo->id,
+            'title' => 'Episode Downloadable',
+            'page_url' => 'https://example.com/serie-download-actions/episode-1/see/',
+            'episode_number' => 1,
+        ]);
+
+        EpisodeServer::query()->create([
+            'episode_id' => $episode->id,
+            'server_name' => 'Main Server',
+            'host' => 'vdesk',
+            'server_page_url' => 'https://example.com/server/download-actions',
+            'final_url' => 'https://cdn.example.com/episode-downloadable.mp4',
+            'status' => EpisodeServer::STATUS_DONE,
+        ]);
+
+        $response = $this->get(route('series-infos.show', $seriesInfo));
+
+        $response->assertOk();
+        $response->assertSee('Télécharger la sélection');
+        $response->assertSee('Télécharger toute la série');
+        $response->assertSee(route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]));
+    }
+
+    public function test_episode_download_route_redirects_to_latest_final_url(): void
+    {
+        $seriesInfo = SeriesInfo::query()->create([
+            'source_episode_page_url' => 'https://example.com/serie-download-route/episode-1/see/',
+            'series_page_url' => 'https://example.com/serie-download-route',
+            'title' => 'Serie Download Route',
+        ]);
+
+        $episode = Episode::query()->create([
+            'series_info_id' => $seriesInfo->id,
+            'title' => 'Episode Download Route',
+            'page_url' => 'https://example.com/serie-download-route/episode-1/see/',
+        ]);
+
+        EpisodeServer::query()->create([
+            'episode_id' => $episode->id,
+            'server_name' => 'Legacy Server',
+            'host' => 'legacy',
+            'server_page_url' => 'https://example.com/server/legacy',
+            'final_url' => 'https://cdn.example.com/old-episode.mp4',
+            'status' => EpisodeServer::STATUS_DONE,
+        ]);
+
+        EpisodeServer::query()->create([
+            'episode_id' => $episode->id,
+            'server_name' => 'Main Server',
+            'host' => 'main',
+            'server_page_url' => 'https://example.com/server/main',
+            'final_url' => 'https://cdn.example.com/new-episode.mp4',
+            'status' => EpisodeServer::STATUS_DONE,
+        ]);
+
+        $response = $this->get(route('series-infos.episodes.download', [
+            'seriesInfo' => $seriesInfo,
+            'episode' => $episode,
+        ]));
+
+        $response->assertRedirect('https://cdn.example.com/new-episode.mp4');
+    }
+
+    public function test_episode_download_route_returns_error_when_final_url_is_missing(): void
+    {
+        $seriesInfo = SeriesInfo::query()->create([
+            'source_episode_page_url' => 'https://example.com/serie-download-missing/episode-1/see/',
+            'series_page_url' => 'https://example.com/serie-download-missing',
+            'title' => 'Serie Download Missing',
+        ]);
+
+        $episode = Episode::query()->create([
+            'series_info_id' => $seriesInfo->id,
+            'title' => 'Episode without final URL',
+            'page_url' => 'https://example.com/serie-download-missing/episode-1/see/',
+        ]);
+
+        $response = $this->from(route('series-infos.show', $seriesInfo))
+            ->get(route('series-infos.episodes.download', [
+                'seriesInfo' => $seriesInfo,
+                'episode' => $episode,
+            ]));
+
+        $response->assertRedirect(route('series-infos.show', $seriesInfo));
+        $response->assertSessionHasErrors(['download']);
+    }
+
     public function test_series_infos_page_can_start_scraping_with_tracking_key(): void
     {
         Queue::fake();
