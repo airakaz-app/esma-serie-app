@@ -12,6 +12,14 @@
 <div class="container py-4 py-lg-5">
     <a href="{{ route('series-infos.index') }}" class="text-decoration-none text-info">← Retour aux séries</a>
 
+    @if (session('status'))
+        <div class="alert alert-success mt-3">{{ session('status') }}</div>
+    @endif
+
+    @if ($errors->any())
+        <div class="alert alert-danger mt-3 mb-0">{{ $errors->first() }}</div>
+    @endif
+
     <section class="card border-0 bg-dark text-light mt-3 shadow-sm">
         <div class="row g-0">
             <div class="col-md-4 bg-black">
@@ -23,10 +31,21 @@
             </div>
             <div class="col-md-8">
                 <div class="card-body">
-                    <h1 class="h3 card-title">{{ $seriesInfo->title ?: 'Sans titre' }}</h1>
-                    <p class="card-text text-secondary">{{ $seriesInfo->episodes->count() }} épisode(s) lié(s)</p>
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                        <div>
+                            <h1 class="h3 card-title">{{ $seriesInfo->title ?: 'Sans titre' }}</h1>
+                            <p class="card-text text-secondary mb-0">{{ $seriesInfo->episodes->count() }} épisode(s) lié(s)</p>
+                        </div>
+
+                        <form method="POST" action="{{ route('series-infos.destroy', $seriesInfo) }}" onsubmit="return confirm('Supprimer cette série et tous ses épisodes ?');">
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" class="btn btn-outline-danger btn-sm">Supprimer la série</button>
+                        </form>
+                    </div>
+
                     @if ($seriesInfo->story)
-                        <p class="card-text">{{ $seriesInfo->story }}</p>
+                        <p class="card-text mt-3">{{ $seriesInfo->story }}</p>
                     @endif
                 </div>
             </div>
@@ -61,6 +80,20 @@
                 </button>
             @endif
         </div>
+
+        @if ($seriesInfo->episodes->isNotEmpty())
+            <form method="POST" action="{{ route('series-infos.episodes.bulk-destroy', $seriesInfo) }}" id="bulkDeleteEpisodesForm" class="mb-3 d-flex flex-wrap align-items-center gap-2" onsubmit="return window.confirmBulkDeleteEpisodes();">
+                @csrf
+                @method('DELETE')
+                <div class="form-check m-0">
+                    <input class="form-check-input" type="checkbox" id="selectAllEpisodes">
+                    <label class="form-check-label" for="selectAllEpisodes">Tout sélectionner</label>
+                </div>
+                <button type="submit" class="btn btn-outline-danger btn-sm" id="bulkDeleteEpisodesButton" disabled>
+                    Supprimer la sélection
+                </button>
+            </form>
+        @endif
 
         <div id="refreshEpisodesError" class="alert alert-danger d-none"></div>
 
@@ -109,6 +142,19 @@
                         </div>
 
                         <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input episode-checkbox" type="checkbox" name="episode_ids[]" value="{{ $episode->id }}" form="bulkDeleteEpisodesForm" id="episode-{{ $episode->id }}">
+                                    <label class="form-check-label small text-secondary" for="episode-{{ $episode->id }}">Sélectionner</label>
+                                </div>
+
+                                <form method="POST" action="{{ route('series-infos.episodes.destroy', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}" onsubmit="return confirm('Supprimer cet épisode ?');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-outline-danger btn-sm">Supprimer</button>
+                                </form>
+                            </div>
+
                             <h3 class="h6 card-title mb-2">{{ $episode->title }}</h3>
                             <p class="small mb-0 {{ $playableUrl ? 'text-info' : 'text-secondary' }}">
                                 @if ($playableUrl)
@@ -232,5 +278,56 @@
         });
     </script>
 @endif
+
+<script>
+    const bulkDeleteEpisodesForm = document.getElementById('bulkDeleteEpisodesForm');
+    const bulkDeleteEpisodesButton = document.getElementById('bulkDeleteEpisodesButton');
+    const selectAllEpisodes = document.getElementById('selectAllEpisodes');
+    const episodeCheckboxes = Array.from(document.querySelectorAll('.episode-checkbox'));
+
+    const updateBulkDeleteState = () => {
+        if (!bulkDeleteEpisodesButton) {
+            return;
+        }
+
+        const selectedCount = episodeCheckboxes.filter((checkbox) => checkbox.checked).length;
+        bulkDeleteEpisodesButton.disabled = selectedCount === 0;
+        bulkDeleteEpisodesButton.textContent = selectedCount === 0
+            ? 'Supprimer la sélection'
+            : `Supprimer la sélection (${selectedCount})`;
+    };
+
+    window.confirmBulkDeleteEpisodes = () => {
+        const selectedCount = episodeCheckboxes.filter((checkbox) => checkbox.checked).length;
+
+        if (selectedCount === 0) {
+            return false;
+        }
+
+        return window.confirm(`Supprimer ${selectedCount} épisode(s) sélectionné(s) ?`);
+    };
+
+    if (selectAllEpisodes) {
+        selectAllEpisodes.addEventListener('change', (event) => {
+            for (const checkbox of episodeCheckboxes) {
+                checkbox.checked = event.target.checked;
+            }
+
+            updateBulkDeleteState();
+        });
+    }
+
+    for (const checkbox of episodeCheckboxes) {
+        checkbox.addEventListener('change', () => {
+            if (selectAllEpisodes) {
+                selectAllEpisodes.checked = episodeCheckboxes.length > 0 && episodeCheckboxes.every((item) => item.checked);
+            }
+
+            updateBulkDeleteState();
+        });
+    }
+
+    updateBulkDeleteState();
+</script>
 </body>
 </html>
