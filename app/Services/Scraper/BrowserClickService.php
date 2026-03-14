@@ -7,6 +7,7 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
@@ -159,6 +160,7 @@ class BrowserClickService
     private function resolveWithPythonBridge(string $iframeUrl): array
     {
         $scriptPath = base_path((string) config('scraper.python_script', 'browser_click.py'));
+        $startedAt = microtime(true);
 
         if (! is_file($scriptPath)) {
             return [
@@ -190,8 +192,49 @@ class BrowserClickService
             config('scraper.headless', true) ? '1' : '0',
         ], base_path());
 
-        $process->setTimeout($this->resolvePythonTimeout());
-        $process->run();
+        $pythonTimeout = $this->resolvePythonTimeout();
+        $process->setTimeout($pythonTimeout);
+        $process->setIdleTimeout(null);
+
+        Log::info('Démarrage bridge Python Selenium.', [
+            'iframe_url' => $iframeUrl,
+            'python_command' => implode(' ', [...$pythonCommand, $scriptPath]),
+            'browser_timeout' => (int) config('scraper.browser_timeout', 30),
+            'python_timeout' => $pythonTimeout,
+            'headless' => config('scraper.headless', true),
+        ]);
+
+        try {
+            $process->run();
+        } catch (ProcessTimedOutException $exception) {
+            $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+            Log::error('Bridge Python timeout.', [
+                'iframe_url' => $iframeUrl,
+                'duration_ms' => $durationMs,
+                'python_timeout' => $pythonTimeout,
+                'output_preview' => mb_substr(trim($process->getOutput()), 0, 800),
+                'error_preview' => mb_substr(trim($process->getErrorOutput()), 0, 800),
+            ]);
+
+            return [
+                'success' => false,
+                'final_url' => null,
+                'final_html' => null,
+                'error' => sprintf('Bridge Python timeout après %.2fs (limite %.2fs).', $durationMs / 1000, $pythonTimeout),
+            ];
+        }
+
+        $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+        Log::info('Fin bridge Python Selenium.', [
+            'iframe_url' => $iframeUrl,
+            'duration_ms' => $durationMs,
+            'exit_code' => $process->getExitCode(),
+            'successful' => $process->isSuccessful(),
+            'output_preview' => mb_substr(trim($process->getOutput()), 0, 400),
+            'error_preview' => mb_substr(trim($process->getErrorOutput()), 0, 400),
+        ]);
 
         if (! $process->isSuccessful()) {
             $error = trim($process->getErrorOutput()) ?: trim($process->getOutput());
@@ -236,7 +279,7 @@ class BrowserClickService
             return $configuredTimeout;
         }
 
-        return max(((float) config('scraper.browser_timeout', 30)) + 30.0, 60.0);
+        return max(((float) config('scraper.browser_timeout', 30)) * 4.0, 180.0);
     }
 
     /**
