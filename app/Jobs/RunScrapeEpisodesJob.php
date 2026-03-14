@@ -19,6 +19,7 @@ class RunScrapeEpisodesJob implements ShouldQueue
     public function __construct(
         public string $listPageUrl,
         public string $trackingKey,
+        public bool $retryErrors = false,
     ) {
     }
 
@@ -32,6 +33,7 @@ class RunScrapeEpisodesJob implements ShouldQueue
         $exitCode = Artisan::call('scrape:episodes', [
             '--list-page-url' => $this->listPageUrl,
             '--tracking-key' => $this->trackingKey,
+            '--retry-errors' => $this->retryErrors,
         ]);
 
         Log::info('Fin du job de scraping.', [

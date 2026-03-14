@@ -204,6 +204,7 @@
 
             const formData = new FormData();
             formData.set('list_page_url', refreshEpisodesButton.dataset.listPageUrl ?? '');
+            formData.set('retry_errors', '1');
 
             try {
                 const response = await fetch('{{ route('series-infos.scrape') }}', {

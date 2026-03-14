@@ -49,6 +49,7 @@ class SeriesInfoController extends Controller
     {
         $trackingKey = (string) Str::uuid();
         $listPageUrl = $request->string('list_page_url')->toString();
+        $retryErrors = $request->boolean('retry_errors');
 
         Cache::put($this->trackingCacheKey($trackingKey), [
             'state' => 'running',
@@ -63,7 +64,7 @@ class SeriesInfoController extends Controller
             'updatedAt' => now()->toIso8601String(),
         ], now()->addHours(2));
 
-        RunScrapeEpisodesJob::dispatch($listPageUrl, $trackingKey);
+        RunScrapeEpisodesJob::dispatch($listPageUrl, $trackingKey, $retryErrors);
 
         return response()->json([
             'started' => true,

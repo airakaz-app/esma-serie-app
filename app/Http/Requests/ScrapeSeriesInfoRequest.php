@@ -18,6 +18,7 @@ class ScrapeSeriesInfoRequest extends FormRequest
     {
         return [
             'list_page_url' => ['required', 'string', 'url', 'max:2048'],
+            'retry_errors' => ['sometimes', 'boolean'],
         ];
     }
 
