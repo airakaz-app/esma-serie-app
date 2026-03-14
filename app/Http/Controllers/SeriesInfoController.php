@@ -197,7 +197,7 @@ class SeriesInfoController extends Controller
                 ]);
         }
 
-        $fileName = $this->downloadFileName($episode, $finalUrl);
+        $fileName = $this->downloadFileName($episode);
         $contentType = $downloadResponse->header('Content-Type') ?: 'application/octet-stream';
         $bodyStream = $downloadResponse->toPsrResponse()->getBody();
 
@@ -211,21 +211,17 @@ class SeriesInfoController extends Controller
         ]);
     }
 
-    private function downloadFileName(Episode $episode, string $finalUrl): string
+    private function downloadFileName(Episode $episode): string
     {
-        $extension = strtolower((string) pathinfo(parse_url($finalUrl, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
-
-        if ($extension === '') {
-            $extension = 'mp4';
-        }
-
-        $baseName = Str::slug($episode->title ?: sprintf('episode-%d', $episode->id));
+        $baseName = trim($episode->title ?: sprintf('episode-%d', $episode->id));
 
         if ($baseName === '') {
             $baseName = sprintf('episode-%d', $episode->id);
         }
 
-        return sprintf('%s.%s', $baseName, $extension);
+        $baseName = str_replace(['\\', '/', "\0"], '-', $baseName);
+
+        return sprintf('%s.%s', $baseName, 'mp4');
     }
 
     private function trackingCacheKey(string $trackingKey): string
