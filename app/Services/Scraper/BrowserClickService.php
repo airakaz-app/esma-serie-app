@@ -200,6 +200,7 @@ class BrowserClickService
             'iframe_url' => $iframeUrl,
             'python_command' => implode(' ', [...$pythonCommand, $scriptPath]),
             'browser_timeout' => (int) config('scraper.browser_timeout', 30),
+            'configured_python_timeout' => (float) config('scraper.python_timeout', 0),
             'python_timeout' => $pythonTimeout,
             'headless' => config('scraper.headless', true),
         ]);
