@@ -10,7 +10,7 @@ return [
     'python_binary' => env('SCRAPER_PYTHON_BINARY', 'python3'),
     'python_candidates' => array_values(array_filter(array_map('trim', explode(',', (string) env('SCRAPER_PYTHON_CANDIDATES', 'python3,python,py3,py'))))),
     'python_script' => env('SCRAPER_PYTHON_SCRIPT', 'browser_click.py'),
-    'python_timeout' => (int) env('SCRAPER_PYTHON_TIMEOUT', 60),
+    'python_timeout' => (int) env('SCRAPER_PYTHON_TIMEOUT', 180),
     'webdriver_url' => env('SCRAPER_WEBDRIVER_URL', 'http://127.0.0.1:9515'),
     'webdriver_autostart' => (bool) env('SCRAPER_WEBDRIVER_AUTOSTART', true),
     'webdriver_binary' => env('SCRAPER_WEBDRIVER_BINARY', 'chromedriver'),

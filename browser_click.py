@@ -14,11 +14,14 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 
-def build_options(headless: bool) -> Options:
+def build_options(headless: bool, headless_mode: str = 'new') -> Options:
     options = Options()
 
     if headless:
-        options.add_argument('--headless=new')
+        if headless_mode == 'legacy':
+            options.add_argument('--headless')
+        else:
+            options.add_argument('--headless=new')
 
     options.add_argument('--disable-blink-features=AutomationControlled')
     options.add_argument('--no-sandbox')
@@ -58,27 +61,46 @@ def parse_webdriver_binary_candidates() -> List[str]:
     return unique_candidates
 
 
+def resolve_headless_modes(headless: bool) -> List[str]:
+    if not headless:
+        return ['new']
+
+    mode = os.getenv('SCRAPER_CHROME_HEADLESS_MODE', 'auto').strip().lower()
+    if mode in ('new', 'legacy'):
+        return [mode]
+
+    return ['new', 'legacy']
+
+
 def build_driver(headless: bool) -> Tuple[WebDriver, str]:
-    options = build_options(headless)
     errors = []
 
-    for command_executor in parse_webdriver_urls():
-        try:
-            return webdriver.Remote(command_executor=command_executor, options=options), f'remote:{command_executor}'
-        except Exception as exc:
-            errors.append(f'remote:{command_executor} => {exc}')
+    for headless_mode in resolve_headless_modes(headless):
+        options = build_options(headless, headless_mode)
 
-    for binary in parse_webdriver_binary_candidates():
-        try:
-            service = Service(executable_path=binary)
-            return webdriver.Chrome(service=service, options=options), f'local:{binary}'
-        except Exception as exc:
-            errors.append(f'local:{binary} => {exc}')
+        for command_executor in parse_webdriver_urls():
+            try:
+                source = f'remote:{command_executor}|headless:{headless_mode}'
 
-    try:
-        return webdriver.Chrome(options=options), 'local:selenium-manager'
-    except Exception as exc:
-        errors.append(f'local:selenium-manager => {exc}')
+                return webdriver.Remote(command_executor=command_executor, options=options), source
+            except Exception as exc:
+                errors.append(f'remote:{command_executor}|headless:{headless_mode} => {exc}')
+
+        for binary in parse_webdriver_binary_candidates():
+            try:
+                service = Service(executable_path=binary)
+                source = f'local:{binary}|headless:{headless_mode}'
+
+                return webdriver.Chrome(service=service, options=options), source
+            except Exception as exc:
+                errors.append(f'local:{binary}|headless:{headless_mode} => {exc}')
+
+        try:
+            source = f'local:selenium-manager|headless:{headless_mode}'
+
+            return webdriver.Chrome(options=options), source
+        except Exception as exc:
+            errors.append(f'local:selenium-manager|headless:{headless_mode} => {exc}')
 
     raise RuntimeError('Aucun WebDriver disponible. Tentatives: ' + ' | '.join(errors))
 

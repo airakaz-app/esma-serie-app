@@ -200,6 +200,7 @@ class BrowserClickService
             'iframe_url' => $iframeUrl,
             'python_command' => implode(' ', [...$pythonCommand, $scriptPath]),
             'browser_timeout' => (int) config('scraper.browser_timeout', 30),
+            'configured_python_timeout' => (float) config('scraper.python_timeout', 0),
             'python_timeout' => $pythonTimeout,
             'headless' => config('scraper.headless', true),
         ]);
@@ -275,11 +276,22 @@ class BrowserClickService
     private function resolvePythonTimeout(): float
     {
         $configuredTimeout = (float) config('scraper.python_timeout', 0);
-        if ($configuredTimeout > 0) {
-            return $configuredTimeout;
+        $minimumSafeTimeout = max(((float) config('scraper.browser_timeout', 30)) * 4.0, 180.0);
+
+        if ($configuredTimeout <= 0) {
+            return $minimumSafeTimeout;
         }
 
-        return max(((float) config('scraper.browser_timeout', 30)) * 4.0, 180.0);
+        if ($configuredTimeout < $minimumSafeTimeout) {
+            Log::warning('SCRAPER_PYTHON_TIMEOUT trop bas, application du minimum de sécurité.', [
+                'configured_timeout' => $configuredTimeout,
+                'minimum_safe_timeout' => $minimumSafeTimeout,
+            ]);
+
+            return $minimumSafeTimeout;
+        }
+
+        return $configuredTimeout;
     }
 
     /**
