@@ -259,13 +259,34 @@ class ScrapeEpisodesCommand extends Command
 
     private function processServer(EpisodeServer $server): void
     {
+        Log::info('Début traitement serveur épisode.', [
+            'server_id' => $server->id,
+            'episode_id' => $server->episode_id,
+            'server_name' => $server->server_name,
+            'host' => $server->host,
+            'status' => $server->status,
+            'retry_count' => $server->retry_count,
+            'has_iframe_url' => $server->iframe_url !== null,
+            'has_final_url' => $server->final_url !== null,
+        ]);
+
         if ($server->status === EpisodeServer::STATUS_DONE) {
+            Log::info('Serveur déjà traité, saut.', [
+                'server_id' => $server->id,
+            ]);
+
             return;
         }
 
         $maxRetries = (int) config('scraper.max_retries', 3);
         if (! $this->option('retry-errors') && $server->retry_count >= $maxRetries) {
             $this->warn("  Serveur #{$server->id} ignoré: retry max atteint.");
+
+            Log::warning('Serveur ignoré: retry max atteint.', [
+                'server_id' => $server->id,
+                'retry_count' => $server->retry_count,
+                'max_retries' => $maxRetries,
+            ]);
 
             return;
         }
@@ -280,8 +301,18 @@ class ScrapeEpisodesCommand extends Command
 
         try {
             if (! $server->iframe_url) {
+                Log::info('Extraction iframe_url depuis server_page_url.', [
+                    'server_id' => $server->id,
+                    'server_page_url' => $server->server_page_url,
+                ]);
+
                 $server->iframe_url = $this->pageScraper->extractIframeUrl($server->server_page_url);
                 $server->save();
+
+                Log::info('Résultat extraction iframe_url.', [
+                    'server_id' => $server->id,
+                    'iframe_url' => $server->iframe_url,
+                ]);
             }
 
             if (! $server->iframe_url) {
@@ -289,7 +320,19 @@ class ScrapeEpisodesCommand extends Command
             }
 
             if (! $server->final_url) {
+                Log::info('Résolution URL finale via BrowserClickService.', [
+                    'server_id' => $server->id,
+                    'iframe_url' => $server->iframe_url,
+                ]);
+
                 $browserResult = $this->browser->resolveDownloadUrl($server->iframe_url);
+
+                Log::info('Résultat BrowserClickService.', [
+                    'server_id' => $server->id,
+                    'success' => $browserResult['success'],
+                    'final_url' => $browserResult['final_url'] ?? null,
+                    'error' => $browserResult['error'] ?? null,
+                ]);
 
                 if (! $browserResult['success']) {
                     throw new \RuntimeException((string) ($browserResult['error'] ?? 'Erreur browser'));
@@ -307,11 +350,23 @@ class ScrapeEpisodesCommand extends Command
                     'error_message' => null,
                     'last_scraped_at' => now(),
                 ])->save();
+
+                Log::info('Serveur traité avec succès.', [
+                    'server_id' => $server->id,
+                    'status' => EpisodeServer::STATUS_DONE,
+                    'final_url' => $server->final_url,
+                    'result_title' => $server->result_title,
+                ]);
             } else {
                 $server->forceFill([
                     'status' => EpisodeServer::STATUS_DONE,
                     'last_scraped_at' => now(),
                 ])->save();
+
+                Log::info('Serveur marqué done car final_url déjà présente.', [
+                    'server_id' => $server->id,
+                    'final_url' => $server->final_url,
+                ]);
             }
         } catch (\Throwable $e) {
             $this->lastError = $e->getMessage();
@@ -326,6 +381,14 @@ class ScrapeEpisodesCommand extends Command
             Log::error('Erreur traitement serveur', [
                 'server_id' => $server->id,
                 'error' => $e->getMessage(),
+                'trace_preview' => mb_substr($e->getTraceAsString(), 0, 1200),
+            ]);
+        } finally {
+            Log::info('Fin traitement serveur épisode.', [
+                'server_id' => $server->id,
+                'status' => $server->fresh()?->status,
+                'retry_count' => $server->fresh()?->retry_count,
+                'error_message' => $server->fresh()?->error_message,
             ]);
         }
     }
