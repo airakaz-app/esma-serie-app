@@ -177,6 +177,10 @@ class SeriesInfoListingTest extends TestCase
         $response->assertOk();
         $response->assertHeader('content-type', 'video/mp4');
         $response->assertHeader('content-disposition');
+        $this->assertStringContainsString(
+            'Episode Download Route.mp4',
+            (string) $response->headers->get('content-disposition')
+        );
 
         Http::assertSent(function ($request): bool {
             return $request->url() === 'https://cdn.example.com/new-episode.mp4';
