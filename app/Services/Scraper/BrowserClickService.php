@@ -436,11 +436,6 @@ class BrowserClickService
         $normalizedError = mb_strtolower($pythonError);
 
         $nonRecoverablePatterns = [
-            'aucun webdriver disponible',
-            'webdriver indisponible',
-            'unable to obtain driver for chrome',
-            'failed to establish a new connection',
-            'connection refused',
             'timeoutexception',
             'nosuchelementexception',
             'elementclickinterceptedexception',
