@@ -9,6 +9,48 @@ use ReflectionClass;
 
 class BrowserClickServiceTest extends TestCase
 {
+    public function test_it_extracts_a_direct_media_url_from_http_html(): void
+    {
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('extractFinalUrlFromHttpHtml');
+
+        $url = $method->invoke(
+            $service,
+            '<script>const file = "https://cdn.example.com/video/episode-1.mp4";</script>',
+            'https://iframe.example.com/embed/123'
+        );
+
+        $this->assertSame('https://cdn.example.com/video/episode-1.mp4', $url);
+    }
+
+    public function test_it_builds_a_tokenized_fallback_url_when_no_media_url_is_found(): void
+    {
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('extractFinalUrlFromHttpHtml');
+
+        $url = $method->invoke(
+            $service,
+            '<script>window.playerToken = "abc123";</script>',
+            'https://iframe.example.com/embed/123'
+        );
+
+        $this->assertSame('https://iframe.example.com/embed/123?token=abc123', $url);
+    }
+
+    public function test_it_resolves_protocol_relative_urls(): void
+    {
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('extractFinalUrlFromHttpHtml');
+
+        $url = $method->invoke(
+            $service,
+            '<script>const source = "//cdn.example.com/stream/episode-1.m3u8";</script>',
+            'https://iframe.example.com/embed/123'
+        );
+
+        $this->assertSame('https://cdn.example.com/stream/episode-1.m3u8', $url);
+    }
+
     public function test_it_skips_webdriver_fallback_when_python_error_is_driver_infrastructure_related(): void
     {
         $service = new BrowserClickService(new Factory());
