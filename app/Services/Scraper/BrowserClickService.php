@@ -72,6 +72,23 @@ class BrowserClickService
             $pythonError = $pythonResult['error'];
 
             if ($strategy === 'python') {
+                Log::warning('Fallback HTTP-only après échec Python bridge (stratégie python).', [
+                    'iframe_url' => $iframeUrl,
+                    'python_error' => $pythonResult['error'],
+                ]);
+
+                $httpFallbackResult = $this->resolveWithHttpOnlyStrategy($iframeUrl);
+
+                if ($httpFallbackResult['success']) {
+                    return $httpFallbackResult;
+                }
+
+                $pythonResult['error'] = sprintf(
+                    'Python bridge: %s | HTTP-only fallback: %s',
+                    $pythonResult['error'] ?? 'erreur inconnue',
+                    $httpFallbackResult['error'] ?? 'erreur inconnue'
+                );
+
                 return $pythonResult;
             }
 
@@ -435,12 +452,22 @@ class BrowserClickService
 
         $normalizedError = mb_strtolower($pythonError);
 
-        $nonRecoverablePatterns = [
+        $recoverablePatterns = [
             'aucun webdriver disponible',
             'webdriver indisponible',
             'unable to obtain driver for chrome',
             'failed to establish a new connection',
             'connection refused',
+            'chromedriver unexpectedly exited',
+        ];
+
+        foreach ($recoverablePatterns as $pattern) {
+            if (str_contains($normalizedError, $pattern)) {
+                return true;
+            }
+        }
+
+        $nonRecoverablePatterns = [
             'timeoutexception',
             'nosuchelementexception',
             'elementclickinterceptedexception',

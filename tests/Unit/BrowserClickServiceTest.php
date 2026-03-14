@@ -86,7 +86,7 @@ class BrowserClickServiceTest extends TestCase
         $this->assertNull($step);
     }
 
-    public function test_it_skips_webdriver_fallback_when_python_error_is_driver_infrastructure_related(): void
+    public function test_it_does_not_skip_webdriver_fallback_when_python_error_is_driver_infrastructure_related(): void
     {
         $service = new BrowserClickService(new Factory());
         $method = (new ReflectionClass($service))->getMethod('shouldAttemptWebDriverFallback');
@@ -96,8 +96,9 @@ class BrowserClickServiceTest extends TestCase
             'RuntimeError: Aucun WebDriver disponible. Tentatives: remote:http://127.0.0.1:9515 => Failed to establish a new connection: [Errno 111] Connection refused'
         );
 
-        $this->assertFalse($shouldFallback);
+        $this->assertTrue($shouldFallback);
     }
+
 
     public function test_it_keeps_webdriver_fallback_for_generic_python_errors(): void
     {
