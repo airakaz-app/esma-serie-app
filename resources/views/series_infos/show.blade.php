@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $seriesInfo->title ?: 'Série' }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -42,7 +43,26 @@
     @endphp
 
     <section class="mt-4">
-        <h2 class="h4 mb-3">Épisodes</h2>
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <h2 class="h4 mb-0">Épisodes</h2>
+
+            @php
+                $refreshListPageUrl = $seriesInfo->series_page_url ?: $seriesInfo->source_episode_page_url;
+            @endphp
+
+            @if ($refreshListPageUrl)
+                <button
+                    type="button"
+                    id="refreshEpisodesButton"
+                    data-list-page-url="{{ $refreshListPageUrl }}"
+                    class="btn btn-outline-info btn-sm"
+                >
+                    Refresh épisodes
+                </button>
+            @endif
+        </div>
+
+        <div id="refreshEpisodesError" class="alert alert-danger d-none"></div>
 
         @if ($isScrapingInProgress)
             <div class="alert alert-info">
@@ -120,6 +140,95 @@
         window.setTimeout(() => {
             window.location.reload();
         }, 10000);
+    </script>
+@endif
+
+@if ($refreshListPageUrl)
+    <script>
+        const refreshEpisodesButton = document.getElementById('refreshEpisodesButton');
+        const refreshEpisodesError = document.getElementById('refreshEpisodesError');
+
+        const setRefreshButtonState = (isLoading) => {
+            refreshEpisodesButton.disabled = isLoading;
+            refreshEpisodesButton.textContent = isLoading ? 'Refresh en cours...' : 'Refresh épisodes';
+        };
+
+        const startPolling = (trackingKey) => {
+            const poll = async () => {
+                const response = await fetch(`{{ route('series-infos.scrape-status', ['trackingKey' => '__TRACKING_KEY__']) }}`.replace('__TRACKING_KEY__', trackingKey), {
+                    headers: {
+                        'Accept': 'application/json',
+                    },
+                });
+
+                if (!response.ok && response.status !== 404) {
+                    throw new Error('Impossible de suivre la progression du refresh.');
+                }
+
+                if (response.status === 404) {
+                    return;
+                }
+
+                const data = await response.json();
+
+                if (data.state === 'error') {
+                    throw new Error(data.lastError ?? data.message ?? 'Erreur pendant le refresh.');
+                }
+
+                if (data.state === 'completed') {
+                    window.location.reload();
+                }
+            };
+
+            const intervalId = window.setInterval(() => {
+                poll().catch((error) => {
+                    window.clearInterval(intervalId);
+                    setRefreshButtonState(false);
+                    refreshEpisodesError.textContent = error.message;
+                    refreshEpisodesError.classList.remove('d-none');
+                });
+            }, 2500);
+
+            poll().catch((error) => {
+                window.clearInterval(intervalId);
+                setRefreshButtonState(false);
+                refreshEpisodesError.textContent = error.message;
+                refreshEpisodesError.classList.remove('d-none');
+            });
+        };
+
+        refreshEpisodesButton.addEventListener('click', async () => {
+            refreshEpisodesError.textContent = '';
+            refreshEpisodesError.classList.add('d-none');
+            setRefreshButtonState(true);
+
+            const formData = new FormData();
+            formData.set('list_page_url', refreshEpisodesButton.dataset.listPageUrl ?? '');
+
+            try {
+                const response = await fetch('{{ route('series-infos.scrape') }}', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    },
+                    body: formData,
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    const firstError = data?.errors?.list_page_url?.[0] ?? data?.message ?? 'Impossible de lancer le refresh.';
+                    throw new Error(firstError);
+                }
+
+                startPolling(data.trackingKey);
+            } catch (error) {
+                setRefreshButtonState(false);
+                refreshEpisodesError.textContent = error.message;
+                refreshEpisodesError.classList.remove('d-none');
+            }
+        });
     </script>
 @endif
 </body>
