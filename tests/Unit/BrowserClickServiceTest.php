@@ -51,6 +51,41 @@ class BrowserClickServiceTest extends TestCase
         $this->assertSame('https://cdn.example.com/stream/episode-1.m3u8', $url);
     }
 
+    public function test_it_extracts_method_free_form_step_with_hidden_payload(): void
+    {
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('findFormStepByTriggerId');
+
+        $step = $method->invoke(
+            $service,
+            '<form action="/dl" method="post"><input type="hidden" name="id" value="abc"><button id="method_free" name="op" value="free">Free Download</button></form>',
+            'https://test.live/2t8d9gf58f75.html',
+            'method_free'
+        );
+
+        $this->assertSame('https://test.live/dl', $step['action']);
+        $this->assertSame('POST', $step['method']);
+        $this->assertSame([
+            'id' => 'abc',
+            'op' => 'free',
+        ], $step['payload']);
+    }
+
+    public function test_it_returns_null_when_trigger_button_does_not_exist(): void
+    {
+        $service = new BrowserClickService(new Factory());
+        $method = (new ReflectionClass($service))->getMethod('findFormStepByTriggerId');
+
+        $step = $method->invoke(
+            $service,
+            '<form action="/dl" method="post"><input type="hidden" name="id" value="abc"></form>',
+            'https://test.live/2t8d9gf58f75.html',
+            'downloadbtn'
+        );
+
+        $this->assertNull($step);
+    }
+
     public function test_it_skips_webdriver_fallback_when_python_error_is_driver_infrastructure_related(): void
     {
         $service = new BrowserClickService(new Factory());
