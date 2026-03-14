@@ -55,6 +55,15 @@ class BrowserClickService
                 return $pythonResult;
             }
 
+            if (! $this->shouldAttemptWebDriverFallback($pythonResult['error'])) {
+                Log::warning('Fallback WebDriver ignoré après échec Python bridge.', [
+                    'iframe_url' => $iframeUrl,
+                    'python_error' => $pythonResult['error'],
+                ]);
+
+                return $pythonResult;
+            }
+
             Log::warning('Fallback vers WebDriver HTTP après échec Python bridge.', [
                 'iframe_url' => $iframeUrl,
                 'python_error' => $pythonResult['error'],
@@ -112,6 +121,31 @@ class BrowserClickService
                 $this->client()->delete("/session/{$sessionId}");
             }
         }
+    }
+
+    private function shouldAttemptWebDriverFallback(?string $pythonError): bool
+    {
+        if (! is_string($pythonError) || trim($pythonError) === '') {
+            return true;
+        }
+
+        $normalizedError = mb_strtolower($pythonError);
+
+        $nonRecoverablePatterns = [
+            'timeoutexception',
+            'nosuchelementexception',
+            'elementclickinterceptedexception',
+            'downloadbtn',
+            'method_free',
+        ];
+
+        foreach ($nonRecoverablePatterns as $pattern) {
+            if (str_contains($normalizedError, $pattern)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
