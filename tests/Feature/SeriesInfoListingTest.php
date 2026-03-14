@@ -112,7 +112,25 @@ class SeriesInfoListingTest extends TestCase
         Queue::assertPushed(RunScrapeEpisodesJob::class, function (RunScrapeEpisodesJob $job): bool {
             return $job->listPageUrl === 'https://example.com/series'
                 && is_string($job->trackingKey)
-                && $job->trackingKey !== '';
+                && $job->trackingKey !== ''
+                && $job->retryErrors === false;
+        });
+    }
+
+    public function test_series_infos_page_can_start_refresh_with_retry_errors_enabled(): void
+    {
+        Queue::fake();
+
+        $response = $this->postJson(route('series-infos.scrape'), [
+            'list_page_url' => 'https://example.com/series',
+            'retry_errors' => true,
+        ]);
+
+        $response->assertOk();
+
+        Queue::assertPushed(RunScrapeEpisodesJob::class, function (RunScrapeEpisodesJob $job): bool {
+            return $job->listPageUrl === 'https://example.com/series'
+                && $job->retryErrors === true;
         });
     }
 
