@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ScrapeSeriesInfoRequest;
 use App\Http\Requests\DeleteEpisodesRequest;
 use App\Jobs\RunScrapeEpisodesJob;
+use App\Models\Episode;
 use App\Models\SeriesInfo;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -159,6 +160,29 @@ class SeriesInfoController extends Controller
         return redirect()
             ->route('series-infos.show', $seriesInfo)
             ->with('status', sprintf('%d épisode(s) supprimé(s).', $deletedCount));
+    }
+
+    public function downloadEpisode(SeriesInfo $seriesInfo, Episode $episode): RedirectResponse
+    {
+        if ($episode->series_info_id !== $seriesInfo->id) {
+            abort(404);
+        }
+
+        $finalUrl = $episode->servers()
+            ->whereNotNull('final_url')
+            ->where('final_url', '!=', '')
+            ->orderByDesc('id')
+            ->value('final_url');
+
+        if (! is_string($finalUrl) || $finalUrl === '') {
+            return redirect()
+                ->route('series-infos.show', $seriesInfo)
+                ->withErrors([
+                    'download' => sprintf('Le lien de téléchargement est indisponible pour "%s".', $episode->title),
+                ]);
+        }
+
+        return redirect()->away($finalUrl);
     }
 
     private function trackingCacheKey(string $trackingKey): string

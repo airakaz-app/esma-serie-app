@@ -114,16 +114,7 @@ class ScrapeEpisodesCommand extends Command
         try {
             $episodes = $this->listScraper->scrape($listUrl);
 
-            foreach ($episodes as $episodeData) {
-                Episode::query()->updateOrCreate(
-                    ['page_url' => $episodeData['page_url']],
-                    [
-                        'title' => $episodeData['title'],
-                        'episode_number' => $episodeData['episode_number'] ?? null,
-                        'image_url' => $episodeData['image_url'] ?? null,
-                    ],
-                );
-            }
+            $this->upsertEpisodes($episodes);
 
             $this->syncSeriesInfoFromEpisodes($episodes);
 
@@ -232,16 +223,7 @@ class ScrapeEpisodesCommand extends Command
                 'info',
             );
 
-            foreach ($servers as $serverData) {
-                EpisodeServer::query()->updateOrCreate(
-                    ['server_page_url' => $serverData['server_page_url']],
-                    [
-                        'episode_id' => $episode->id,
-                        'server_name' => $serverData['server_name'],
-                        'host' => $serverData['host'],
-                    ],
-                );
-            }
+            $this->upsertEpisodeServers($episode, $servers);
 
             $serverQuery = $episode->servers()->orderBy('id');
 
@@ -254,7 +236,7 @@ class ScrapeEpisodesCommand extends Command
                 $serverQuery->where('status', '!=', EpisodeServer::STATUS_DONE);
             }
 
-            foreach ($serverQuery->get() as $server) {
+            foreach ($serverQuery->cursor() as $server) {
                 if ($limit !== null && $serversProcessed >= $limit) {
                     break;
                 }
@@ -278,6 +260,76 @@ class ScrapeEpisodesCommand extends Command
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * @param array<int, array{title:string,page_url:string,episode_number:?int,image_url:?string}> $episodes
+     */
+    private function upsertEpisodes(array $episodes): void
+    {
+        if ($episodes === []) {
+            return;
+        }
+
+        $now = now();
+
+        $payload = collect($episodes)
+            ->filter(fn (array $episode): bool => isset($episode['page_url']) && trim((string) $episode['page_url']) !== '')
+            ->map(fn (array $episode): array => [
+                'page_url' => (string) $episode['page_url'],
+                'title' => (string) $episode['title'],
+                'episode_number' => $episode['episode_number'] ?? null,
+                'image_url' => $episode['image_url'] ?? null,
+                'updated_at' => $now,
+                'created_at' => $now,
+            ])
+            ->values()
+            ->all();
+
+        if ($payload === []) {
+            return;
+        }
+
+        Episode::query()->upsert(
+            $payload,
+            ['page_url'],
+            ['title', 'episode_number', 'image_url', 'updated_at'],
+        );
+    }
+
+    /**
+     * @param array<int, array{server_name:?string,host:?string,server_page_url:string}> $servers
+     */
+    private function upsertEpisodeServers(Episode $episode, array $servers): void
+    {
+        if ($servers === []) {
+            return;
+        }
+
+        $now = now();
+
+        $payload = collect($servers)
+            ->filter(fn (array $server): bool => isset($server['server_page_url']) && trim((string) $server['server_page_url']) !== '')
+            ->map(fn (array $server): array => [
+                'server_page_url' => (string) $server['server_page_url'],
+                'episode_id' => $episode->id,
+                'server_name' => $server['server_name'],
+                'host' => $server['host'],
+                'updated_at' => $now,
+                'created_at' => $now,
+            ])
+            ->values()
+            ->all();
+
+        if ($payload === []) {
+            return;
+        }
+
+        EpisodeServer::query()->upsert(
+            $payload,
+            ['server_page_url'],
+            ['episode_id', 'server_name', 'host', 'updated_at'],
+        );
     }
 
     private function processServer(EpisodeServer $server): void
