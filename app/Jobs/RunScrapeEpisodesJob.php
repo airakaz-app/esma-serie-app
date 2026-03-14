@@ -54,6 +54,13 @@ class RunScrapeEpisodesJob implements ShouldQueue
                 'currentEpisodeTitle' => null,
                 'lastError' => 'Exit code '.$exitCode,
                 'updatedAt' => now()->toIso8601String(),
+                'events' => [
+                    [
+                        'time' => now()->format('H:i:s'),
+                        'level' => 'error',
+                        'message' => 'Le worker a retourné un code de sortie en erreur.',
+                    ],
+                ],
             ], now()->addHours(2));
         }
     }
@@ -71,6 +78,13 @@ class RunScrapeEpisodesJob implements ShouldQueue
             'currentEpisodeTitle' => null,
             'lastError' => $exception?->getMessage(),
             'updatedAt' => now()->toIso8601String(),
+            'events' => [
+                [
+                    'time' => now()->format('H:i:s'),
+                    'level' => 'error',
+                    'message' => 'Le job de scraping a échoué.',
+                ],
+            ],
         ], now()->addHours(2));
 
         Log::error('Échec du job de scraping.', [

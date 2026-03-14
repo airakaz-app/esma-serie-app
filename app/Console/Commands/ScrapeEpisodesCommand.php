@@ -40,6 +40,11 @@ class ScrapeEpisodesCommand extends Command
 
     private ?string $lastError = null;
 
+    /**
+     * @var array<int, array{time:string, level:string, message:string}>
+     */
+    private array $trackingEvents = [];
+
     public function __construct(
         private readonly EpisodeListScraper $listScraper,
         private readonly EpisodePageScraper $pageScraper,
@@ -77,6 +82,11 @@ class ScrapeEpisodesCommand extends Command
         foreach ($episodeQuery->lazyById(100) as $episode) {
             $this->currentEpisodeTitle = $episode->title;
             $this->line("- Épisode #{$episode->id}: {$episode->title}");
+            $this->updateTrackingStatus(
+                'running',
+                sprintf('Traitement épisode %d/%d : %s', max(1, $this->episodesProcessed + 1), max(1, $this->episodesTotal), $episode->title),
+                'info',
+            );
             $this->processEpisode($episode, $serversProcessed, $limit);
             $this->episodesProcessed++;
             $this->updateTrackingStatus('running', 'Récupération des épisodes en cours...');
@@ -202,6 +212,12 @@ class ScrapeEpisodesCommand extends Command
 
     private function processEpisode(Episode $episode, int &$serversProcessed, ?int $limit): void
     {
+        $this->updateTrackingStatus(
+            'running',
+            sprintf('Analyse des serveurs pour %s', $episode->title),
+            'info',
+        );
+
         $episode->forceFill([
             'status' => Episode::STATUS_IN_PROGRESS,
             'error_message' => null,
@@ -210,6 +226,11 @@ class ScrapeEpisodesCommand extends Command
 
         try {
             $servers = $this->pageScraper->extractServers($episode->page_url);
+            $this->updateTrackingStatus(
+                'running',
+                sprintf('Serveurs trouvés pour %s : %d', $episode->title, count($servers)),
+                'info',
+            );
 
             foreach ($servers as $serverData) {
                 EpisodeServer::query()->updateOrCreate(
@@ -294,6 +315,11 @@ class ScrapeEpisodesCommand extends Command
         }
 
         $this->line("  Serveur #{$server->id} {$server->server_name} ({$server->host})");
+        $this->updateTrackingStatus(
+            'running',
+            sprintf('Épisode %s • serveur %s (%s)', $server->episode->title, $server->server_name, $server->host),
+            'info',
+        );
 
         $server->forceFill([
             'status' => EpisodeServer::STATUS_IN_PROGRESS,
@@ -353,6 +379,12 @@ class ScrapeEpisodesCommand extends Command
                     'last_scraped_at' => now(),
                 ])->save();
 
+                $this->updateTrackingStatus(
+                    'running',
+                    sprintf('Lien final trouvé pour %s (%s)', $server->episode->title, $server->server_name),
+                    'success',
+                );
+
                 Log::info('Serveur traité avec succès.', [
                     'server_id' => $server->id,
                     'status' => EpisodeServer::STATUS_DONE,
@@ -379,6 +411,12 @@ class ScrapeEpisodesCommand extends Command
                 'retry_count' => $server->retry_count + 1,
                 'last_scraped_at' => now(),
             ])->save();
+
+            $this->updateTrackingStatus(
+                'running',
+                sprintf('Erreur serveur %s (%s) : %s', $server->server_name, $server->episode->title, $e->getMessage()),
+                'error',
+            );
 
             Log::error('Erreur traitement serveur', [
                 'server_id' => $server->id,
@@ -419,13 +457,21 @@ class ScrapeEpisodesCommand extends Command
             'status' => $status,
             'last_scraped_at' => now(),
         ])->save();
+
+        $this->updateTrackingStatus(
+            'running',
+            sprintf('Épisode %s terminé avec le statut %s', $episode->title, $status),
+            $status === Episode::STATUS_DONE ? 'success' : ($status === Episode::STATUS_ERROR ? 'error' : 'info'),
+        );
     }
 
-    private function updateTrackingStatus(string $state, string $message): void
+    private function updateTrackingStatus(string $state, string $message, string $level = 'info'): void
     {
         if ($this->trackingKey === null || $this->trackingKey === '') {
             return;
         }
+
+        $this->pushTrackingEvent($level, $message);
 
         $percent = $this->episodesTotal > 0
             ? min(100, (int) round(($this->episodesProcessed / $this->episodesTotal) * 100))
@@ -442,7 +488,22 @@ class ScrapeEpisodesCommand extends Command
             'currentEpisodeTitle' => $this->currentEpisodeTitle,
             'lastError' => $this->lastError,
             'updatedAt' => now()->toIso8601String(),
+            'events' => $this->trackingEvents,
         ], now()->addHours(2));
+    }
+
+
+    private function pushTrackingEvent(string $level, string $message): void
+    {
+        $this->trackingEvents[] = [
+            'time' => now()->format('H:i:s'),
+            'level' => $level,
+            'message' => $message,
+        ];
+
+        if (count($this->trackingEvents) > 30) {
+            $this->trackingEvents = array_slice($this->trackingEvents, -30);
+        }
     }
 
     private function trackingCacheKey(): string
