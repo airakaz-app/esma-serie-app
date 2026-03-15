@@ -149,4 +149,17 @@ class BrowserClickServiceTest extends TestCase
         $this->assertSame(180.0, $timeout);
     }
 
+    public function test_it_handles_empty_html_summary_without_throwing(): void
+    {
+        $service = new BrowserClickService(new Factory());
+
+        $summary = $service->summarizeHtml('');
+
+        $this->assertSame([
+            'result_title' => null,
+            'result_h1' => null,
+            'result_preview' => '',
+        ], $summary);
+    }
+
 }

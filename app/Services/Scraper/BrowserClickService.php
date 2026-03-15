@@ -721,6 +721,14 @@ class BrowserClickService
 
     public function summarizeHtml(string $html): array
     {
+        if (trim($html) === '') {
+            return [
+                'result_title' => null,
+                'result_h1' => null,
+                'result_preview' => '',
+            ];
+        }
+
         $dom = new \DOMDocument();
         @$dom->loadHTML($html);
 
