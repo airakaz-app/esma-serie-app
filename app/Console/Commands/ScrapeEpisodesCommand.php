@@ -57,6 +57,15 @@ class ScrapeEpisodesCommand extends Command
     public function handle(): int
     {
         $this->trackingKey = $this->option('tracking-key') ? (string) $this->option('tracking-key') : null;
+
+        Log::info('Démarrage commande scrape:episodes.', [
+            'tracking_key' => $this->trackingKey,
+            'list_page_url_option' => $this->option('list-page-url'),
+            'episode_id_option' => $this->option('episode-id'),
+            'limit_option' => $this->option('limit'),
+            'retry_errors' => (bool) $this->option('retry-errors'),
+            'only_pending' => (bool) $this->option('only-pending'),
+        ]);
         $this->updateTrackingStatus('running', 'Initialisation du scraping...');
 
         $listUrl = (string) ($this->option('list-page-url') ?: config('scraper.list_page_url'));
@@ -66,6 +75,11 @@ class ScrapeEpisodesCommand extends Command
 
             return self::FAILURE;
         }
+
+        Log::info('Préparation scan des épisodes.', [
+            'list_url' => $listUrl,
+            'episode_id_option' => $this->option('episode-id'),
+        ]);
 
         $this->scanEpisodes($listUrl);
 
@@ -78,6 +92,11 @@ class ScrapeEpisodesCommand extends Command
         $this->episodesProcessed = 0;
         $this->info(sprintf('Épisodes à traiter: %d', $this->episodesTotal));
         $this->updateTrackingStatus('running', 'Récupération des épisodes en cours...');
+
+        Log::info('Début boucle de traitement des épisodes.', [
+            'episodes_total' => $this->episodesTotal,
+            'limit' => $limit,
+        ]);
 
         foreach ($episodeQuery->lazyById(100) as $episode) {
             $this->currentEpisodeTitle = $episode->title;
@@ -99,6 +118,13 @@ class ScrapeEpisodesCommand extends Command
 
         $this->currentEpisodeTitle = null;
         $this->updateTrackingStatus('completed', 'Scraping terminé.');
+
+        Log::info('Fin commande scrape:episodes.', [
+            'episodes_total' => $this->episodesTotal,
+            'episodes_processed' => $this->episodesProcessed,
+            'last_error' => $this->lastError,
+            'tracking_key' => $this->trackingKey,
+        ]);
 
         return self::SUCCESS;
     }
@@ -203,6 +229,14 @@ class ScrapeEpisodesCommand extends Command
 
     private function processEpisode(Episode $episode, int &$serversProcessed, ?int $limit): void
     {
+        Log::info('Début traitement épisode.', [
+            'episode_id' => $episode->id,
+            'episode_title' => $episode->title,
+            'page_url' => $episode->page_url,
+            'servers_processed_so_far' => $serversProcessed,
+            'limit' => $limit,
+        ]);
+
         $this->updateTrackingStatus(
             'running',
             sprintf('Analyse des serveurs pour %s', $episode->title),
@@ -217,6 +251,11 @@ class ScrapeEpisodesCommand extends Command
 
         try {
             $servers = $this->pageScraper->extractServers($episode->page_url);
+
+            Log::info('Serveurs extraits pour épisode.', [
+                'episode_id' => $episode->id,
+                'servers_found' => count($servers),
+            ]);
             $this->updateTrackingStatus(
                 'running',
                 sprintf('Serveurs trouvés pour %s : %d', $episode->title, count($servers)),
@@ -236,6 +275,12 @@ class ScrapeEpisodesCommand extends Command
                 $serverQuery->where('status', '!=', EpisodeServer::STATUS_DONE);
             }
 
+            Log::info('Début parcours serveurs épisode.', [
+                'episode_id' => $episode->id,
+                'query_only_pending' => (bool) $this->option('only-pending'),
+                'query_retry_errors' => (bool) $this->option('retry-errors'),
+            ]);
+
             foreach ($serverQuery->cursor() as $server) {
                 if ($limit !== null && $serversProcessed >= $limit) {
                     break;
@@ -246,6 +291,12 @@ class ScrapeEpisodesCommand extends Command
             }
 
             $this->refreshEpisodeStatus($episode);
+
+            Log::info('Fin traitement épisode.', [
+                'episode_id' => $episode->id,
+                'episode_status' => $episode->fresh()?->status,
+                'servers_processed_after_episode' => $serversProcessed,
+            ]);
         } catch (\Throwable $e) {
             $this->lastError = $e->getMessage();
 
@@ -379,6 +430,11 @@ class ScrapeEpisodesCommand extends Command
             'last_scraped_at' => now(),
         ])->save();
 
+        Log::info('Serveur marqué in_progress.', [
+            'server_id' => $server->id,
+            'episode_id' => $server->episode_id,
+        ]);
+
         try {
             if (! $server->iframe_url) {
                 Log::info('Extraction iframe_url depuis server_page_url.', [
@@ -411,6 +467,7 @@ class ScrapeEpisodesCommand extends Command
                     'server_id' => $server->id,
                     'success' => $browserResult['success'],
                     'final_url' => $browserResult['final_url'] ?? null,
+                    'final_html_length' => mb_strlen((string) ($browserResult['final_html'] ?? '')),
                     'error' => $browserResult['error'] ?? null,
                 ]);
 
@@ -418,7 +475,22 @@ class ScrapeEpisodesCommand extends Command
                     throw new \RuntimeException((string) ($browserResult['error'] ?? 'Erreur browser'));
                 }
 
-                $summary = $this->browser->summarizeHtml((string) ($browserResult['final_html'] ?? ''));
+                $finalHtml = (string) ($browserResult['final_html'] ?? '');
+
+                Log::info('Préparation résumé HTML.', [
+                    'server_id' => $server->id,
+                    'final_html_length' => mb_strlen($finalHtml),
+                    'final_url' => $browserResult['final_url'] ?? null,
+                ]);
+
+                $summary = $this->browser->summarizeHtml($finalHtml);
+
+                Log::info('Résumé HTML produit.', [
+                    'server_id' => $server->id,
+                    'result_title' => $summary['result_title'],
+                    'result_h1' => $summary['result_h1'],
+                    'result_preview_length' => mb_strlen((string) $summary['result_preview']),
+                ]);
 
                 $server->forceFill([
                     'click_success' => true,
@@ -504,6 +576,14 @@ class ScrapeEpisodesCommand extends Command
         } else {
             $status = Episode::STATUS_IN_PROGRESS;
         }
+
+        Log::info('Calcul statut épisode.', [
+            'episode_id' => $episode->id,
+            'states' => $states->toArray(),
+            'total_servers' => $totalServers,
+            'done_servers' => $doneServers,
+            'selected_status' => $status,
+        ]);
 
         $episode->forceFill([
             'status' => $status,

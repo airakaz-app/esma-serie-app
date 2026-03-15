@@ -43,8 +43,25 @@ class BrowserClickService
     {
         $strategy = (string) config('scraper.browser_strategy', 'auto');
 
+        Log::info('Début BrowserClickService::resolveDownloadUrl.', [
+            'iframe_url' => $iframeUrl,
+            'strategy' => $strategy,
+        ]);
+
         if (in_array($strategy, ['http', 'auto'], true)) {
+            Log::info('Tentative résolution via stratégie HTTP-only.', [
+                'iframe_url' => $iframeUrl,
+            ]);
+
             $httpResult = $this->resolveWithHttpOnlyStrategy($iframeUrl);
+
+            Log::info('Résultat stratégie HTTP-only.', [
+                'iframe_url' => $iframeUrl,
+                'success' => $httpResult['success'],
+                'final_url' => $httpResult['final_url'],
+                'final_html_length' => mb_strlen((string) ($httpResult['final_html'] ?? '')),
+                'error' => $httpResult['error'],
+            ]);
 
             if ($httpResult['success']) {
                 return $httpResult;
@@ -63,7 +80,19 @@ class BrowserClickService
         $pythonError = null;
 
         if (in_array($strategy, ['python', 'auto'], true)) {
+            Log::info('Tentative résolution via bridge Python.', [
+                'iframe_url' => $iframeUrl,
+            ]);
+
             $pythonResult = $this->resolveWithPythonBridge($iframeUrl);
+
+            Log::info('Résultat bridge Python.', [
+                'iframe_url' => $iframeUrl,
+                'success' => $pythonResult['success'],
+                'final_url' => $pythonResult['final_url'],
+                'final_html_length' => mb_strlen((string) ($pythonResult['final_html'] ?? '')),
+                'error' => $pythonResult['error'],
+            ]);
 
             if ($pythonResult['success']) {
                 return $pythonResult;
@@ -128,10 +157,20 @@ class BrowserClickService
             $this->waitForReady($sessionId);
             $this->waitForStableUrl($sessionId);
 
+            $resolvedUrl = $this->currentUrl($sessionId);
+            $resolvedHtml = $this->pageHtml($sessionId);
+
+            Log::info('Résolution WebDriver terminée.', [
+                'iframe_url' => $iframeUrl,
+                'session_id' => $sessionId,
+                'final_url' => $resolvedUrl,
+                'final_html_length' => mb_strlen($resolvedHtml),
+            ]);
+
             return [
                 'success' => true,
-                'final_url' => $this->currentUrl($sessionId),
-                'final_html' => $this->pageHtml($sessionId),
+                'final_url' => $resolvedUrl,
+                'final_html' => $resolvedHtml,
                 'error' => null,
             ];
         } catch (\Throwable $e) {
@@ -155,6 +194,10 @@ class BrowserClickService
             ];
         } finally {
             if ($sessionId !== null) {
+                Log::info('Fermeture session WebDriver.', [
+                    'session_id' => $sessionId,
+                ]);
+
                 $this->client()->delete("/session/{$sessionId}");
             }
         }
@@ -165,6 +208,10 @@ class BrowserClickService
      */
     private function resolveWithHttpOnlyStrategy(string $iframeUrl): array
     {
+        Log::info('HTTP-only: récupération de la page iframe.', [
+            'iframe_url' => $iframeUrl,
+        ]);
+
         try {
             $response = $this->httpClientForScraping($iframeUrl)
                 ->get($iframeUrl)
@@ -181,27 +228,80 @@ class BrowserClickService
         $currentUrl = (string) ($response->effectiveUri() ?? $iframeUrl);
         $html = (string) $response->body();
 
+        Log::info('HTTP-only: page iframe récupérée.', [
+            'iframe_url' => $iframeUrl,
+            'current_url' => $currentUrl,
+            'html_length' => mb_strlen($html),
+        ]);
+
         $stepOne = $this->findFormStepByTriggerId($html, $currentUrl, 'method_free');
         if ($stepOne !== null) {
+            Log::info('HTTP-only: étape method_free détectée.', [
+                'iframe_url' => $iframeUrl,
+                'action' => $stepOne['action'],
+                'method' => $stepOne['method'],
+                'payload_keys' => array_keys($stepOne['payload']),
+            ]);
+
             $response = $this->submitHttpStep($stepOne, $iframeUrl);
             $currentUrl = (string) ($response->effectiveUri() ?? $stepOne['action']);
             $html = (string) $response->body();
+
+            Log::info('HTTP-only: réponse method_free reçue.', [
+                'iframe_url' => $iframeUrl,
+                'current_url' => $currentUrl,
+                'html_length' => mb_strlen($html),
+            ]);
+        } else {
+            Log::warning('HTTP-only: bouton method_free introuvable.', [
+                'iframe_url' => $iframeUrl,
+                'current_url' => $currentUrl,
+            ]);
         }
 
         $stepTwo = $this->findFormStepByTriggerId($html, $currentUrl, 'downloadbtn');
         if ($stepTwo !== null) {
+            Log::info('HTTP-only: étape downloadbtn détectée.', [
+                'iframe_url' => $iframeUrl,
+                'action' => $stepTwo['action'],
+                'method' => $stepTwo['method'],
+                'payload_keys' => array_keys($stepTwo['payload']),
+            ]);
+
             $response = $this->submitHttpStep($stepTwo, $iframeUrl);
             $currentUrl = (string) ($response->effectiveUri() ?? $stepTwo['action']);
             $html = (string) $response->body();
+
+            Log::info('HTTP-only: réponse downloadbtn reçue.', [
+                'iframe_url' => $iframeUrl,
+                'current_url' => $currentUrl,
+                'html_length' => mb_strlen($html),
+            ]);
+        } else {
+            Log::warning('HTTP-only: bouton downloadbtn introuvable.', [
+                'iframe_url' => $iframeUrl,
+                'current_url' => $currentUrl,
+            ]);
         }
 
         $resolvedUrl = $this->extractFinalUrlFromHttpHtml($html, $currentUrl);
 
         if ($resolvedUrl === null && $this->looksLikeDownloadCandidate($currentUrl)) {
+            Log::info('HTTP-only: URL courante retenue comme candidat final.', [
+                'iframe_url' => $iframeUrl,
+                'current_url' => $currentUrl,
+            ]);
+
             $resolvedUrl = $currentUrl;
         }
 
         if ($resolvedUrl === null) {
+            Log::warning('HTTP-only: aucun lien final détecté.', [
+                'iframe_url' => $iframeUrl,
+                'current_url' => $currentUrl,
+                'html_length' => mb_strlen($html),
+            ]);
+
             return [
                 'success' => false,
                 'final_url' => null,
@@ -209,6 +309,12 @@ class BrowserClickService
                 'error' => 'HTTP-only: aucun endpoint exploitable détecté après simulation method_free/downloadbtn.',
             ];
         }
+
+        Log::info('HTTP-only: lien final détecté.', [
+            'iframe_url' => $iframeUrl,
+            'final_url' => $resolvedUrl,
+            'html_length' => mb_strlen($html),
+        ]);
 
         return [
             'success' => true,
@@ -721,6 +827,21 @@ class BrowserClickService
 
     public function summarizeHtml(string $html): array
     {
+        Log::info('Début BrowserClickService::summarizeHtml.', [
+            'html_length' => mb_strlen($html),
+        ]);
+
+        if (trim($html) === '') {
+            Log::warning('summarizeHtml appelé avec un HTML vide.', [
+                'html_length' => mb_strlen($html),
+            ]);
+            return [
+                'result_title' => null,
+                'result_h1' => null,
+                'result_preview' => '',
+            ];
+        }
+
         $dom = new \DOMDocument();
         @$dom->loadHTML($html);
 
@@ -728,11 +849,19 @@ class BrowserClickService
         $h1 = $dom->getElementsByTagName('h1')->item(0)?->textContent;
         $text = trim(preg_replace('/\s+/', ' ', strip_tags($html)) ?? '');
 
-        return [
+        $summary = [
             'result_title' => $title ? trim($title) : null,
             'result_h1' => $h1 ? trim($h1) : null,
             'result_preview' => mb_substr($text, 0, 400),
         ];
+
+        Log::info('Fin BrowserClickService::summarizeHtml.', [
+            'result_title' => $summary['result_title'],
+            'result_h1' => $summary['result_h1'],
+            'result_preview_length' => mb_strlen($summary['result_preview']),
+        ]);
+
+        return $summary;
     }
 
     private function ensureWebDriverIsReachable(): void
