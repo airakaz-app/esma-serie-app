@@ -20,6 +20,7 @@ class ScrapeEpisodesCommand extends Command
         {--limit= : Nombre max de serveurs à traiter}
         {--episode-id= : Traiter un seul épisode}
         {--list-page-url= : URL de la page liste à scraper}
+        {--series-info-id= : Retenter uniquement les épisodes en erreur d\'une série (skip scan)}
         {--tracking-key= : Clé de suivi de progression}
         {--retry-errors : Rejouer les statuts error}
         {--only-pending : Traiter uniquement les statuts pending}';
@@ -68,8 +69,10 @@ class ScrapeEpisodesCommand extends Command
         ]);
         $this->updateTrackingStatus('running', 'Initialisation du scraping...');
 
+        $seriesInfoId = $this->option('series-info-id') ? (int) $this->option('series-info-id') : null;
         $listUrl = (string) ($this->option('list-page-url') ?: '');
-        if ($listUrl === '' && ! $this->option('episode-id')) {
+
+        if ($listUrl === '' && ! $this->option('episode-id') && $seriesInfoId === null) {
             $this->error('URL de la liste manquante (option --list-page-url requise).');
             $this->updateTrackingStatus('error', 'URL de liste manquante.');
 
@@ -78,10 +81,16 @@ class ScrapeEpisodesCommand extends Command
 
         Log::info('Préparation scan des épisodes.', [
             'list_url' => $listUrl,
+            'series_info_id' => $seriesInfoId,
             'episode_id_option' => $this->option('episode-id'),
         ]);
 
-        $this->scanEpisodes($listUrl);
+        // Mode retry-only : pas de scan de la page liste
+        if ($seriesInfoId === null) {
+            $this->scanEpisodes($listUrl);
+        } else {
+            $this->resetErrorServersForSeries($seriesInfoId);
+        }
 
         $serversProcessed = 0;
         $limit = $this->option('limit') ? (int) $this->option('limit') : null;
@@ -129,6 +138,36 @@ class ScrapeEpisodesCommand extends Command
         return self::SUCCESS;
     }
 
+    private function resetErrorServersForSeries(int $seriesInfoId): void
+    {
+        $this->info("Retry mode : reset des serveurs en erreur pour la série #{$seriesInfoId}.");
+        $this->updateTrackingStatus('running', 'Réinitialisation des serveurs en erreur...');
+
+        // Remet les serveurs en erreur à pending pour qu'ils soient retraités
+        $updated = EpisodeServer::query()
+            ->whereHas('episode', fn (Builder $q) => $q->where('series_info_id', $seriesInfoId))
+            ->where('status', EpisodeServer::STATUS_ERROR)
+            ->update([
+                'status'     => EpisodeServer::STATUS_PENDING,
+                'retry_count' => 0,
+                'error_message' => null,
+            ]);
+
+        // Remet aussi les épisodes en erreur à pending
+        Episode::query()
+            ->where('series_info_id', $seriesInfoId)
+            ->where('status', Episode::STATUS_ERROR)
+            ->update(['status' => Episode::STATUS_PENDING, 'error_message' => null]);
+
+        Log::info('Serveurs en erreur réinitialisés.', [
+            'series_info_id' => $seriesInfoId,
+            'servers_reset' => $updated,
+        ]);
+
+        $this->info("Serveurs réinitialisés : {$updated}");
+        $this->updateTrackingStatus('running', "Serveurs réinitialisés : {$updated}. Traitement en cours...");
+    }
+
     private function scanEpisodes(string $listUrl): void
     {
         if ($this->option('episode-id')) {
@@ -160,16 +199,21 @@ class ScrapeEpisodesCommand extends Command
 
         if ($episodeId = $this->option('episode-id')) {
             $query->whereKey((int) $episodeId);
+        } elseif ($seriesInfoId = $this->option('series-info-id')) {
+            // Mode retry : épisodes de cette série qui ne sont pas done
+            // (les erreurs ont été remises en pending par resetErrorServersForSeries)
+            $query->where('series_info_id', (int) $seriesInfoId)
+                ->where('status', '!=', Episode::STATUS_DONE);
         } else {
             $query->where('status', '!=', Episode::STATUS_DONE);
-        }
 
-        if ($this->option('only-pending')) {
-            $query->where('status', Episode::STATUS_PENDING);
-        }
+            if ($this->option('only-pending')) {
+                $query->where('status', Episode::STATUS_PENDING);
+            }
 
-        if (! $this->option('retry-errors')) {
-            $query->where('status', '!=', Episode::STATUS_ERROR);
+            if (! $this->option('retry-errors')) {
+                $query->where('status', '!=', Episode::STATUS_ERROR);
+            }
         }
 
         return $query;

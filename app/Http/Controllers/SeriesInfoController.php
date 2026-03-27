@@ -7,9 +7,11 @@ use App\Http\Requests\DeleteEpisodesRequest;
 use App\Jobs\RunScrapeEpisodesJob;
 use App\Models\Episode;
 use App\Models\SeriesInfo;
+use App\Services\Scraper\HtmlFetcher;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Facades\Cache;
@@ -48,6 +50,93 @@ class SeriesInfoController extends Controller
         return view('series_infos.show', [
             'seriesInfo' => $seriesInfo,
         ]);
+    }
+
+    public function searchExternal(Request $request, HtmlFetcher $fetcher): JsonResponse
+    {
+        $query = trim((string) $request->string('q'));
+        if ($query === '') {
+            return response()->json(['results' => []]);
+        }
+
+        $baseUrl = rtrim((string) config('scraper.source_base_url', 'https://n.esheaq.onl'), '/');
+
+        try {
+            $html = $fetcher->fetch($baseUrl.'/?s='.urlencode($query));
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'Impossible de contacter le site source : '.$e->getMessage()], 502);
+        }
+
+        $dom = new \DOMDocument();
+        @$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+        $xpath = new \DOMXPath($dom);
+
+        $results = [];
+
+        // Cherche toutes les balises <a> qui pointent vers /watch/ (URLs de séries)
+        $anchors = $xpath->query("//a[contains(@href, '/watch/')]");
+        $seen = [];
+
+        if ($anchors !== false) {
+            foreach ($anchors as $anchor) {
+                if (! $anchor instanceof \DOMElement) {
+                    continue;
+                }
+
+                $href = trim((string) $anchor->getAttribute('href'));
+                // Exclure les URLs d'épisodes /watch/slug/see/
+                if (str_contains($href, '/see/') || $href === '') {
+                    continue;
+                }
+                if (isset($seen[$href])) {
+                    continue;
+                }
+                $seen[$href] = true;
+
+                // Cherche un titre : d'abord dans .title, sinon le texte de l'ancre
+                $titleNode = $xpath->query(
+                    ".//*[contains(concat(' ', normalize-space(@class), ' '), ' title ')]",
+                    $anchor->parentNode instanceof \DOMElement ? $anchor->parentNode : $anchor
+                )?->item(0);
+
+                $title = $titleNode ? trim($titleNode->textContent) : trim($anchor->textContent);
+
+                if ($title === '') {
+                    $title = trim((string) $anchor->getAttribute('title'));
+                }
+                if ($title === '') {
+                    continue;
+                }
+
+                // Cherche l'image dans l'article parent
+                $article = $anchor;
+                while ($article !== null && ! ($article instanceof \DOMElement && strtolower($article->tagName) === 'article')) {
+                    $article = $article->parentNode instanceof \DOMElement ? $article->parentNode : null;
+                }
+
+                $imageUrl = null;
+                if ($article instanceof \DOMElement) {
+                    $imgNode = $xpath->query('.//img', $article)?->item(0);
+                    if ($imgNode instanceof \DOMElement) {
+                        foreach (['src', 'data-src', 'data-image', 'data-lazy-src'] as $attr) {
+                            $src = trim((string) $imgNode->getAttribute($attr));
+                            if ($src !== '' && ! str_starts_with($src, 'data:')) {
+                                $imageUrl = $src;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                $results[] = ['title' => $title, 'url' => $href, 'image' => $imageUrl];
+
+                if (count($results) >= 20) {
+                    break;
+                }
+            }
+        }
+
+        return response()->json(['results' => $results]);
     }
 
     public function scrape(ScrapeSeriesInfoRequest $request): JsonResponse
@@ -90,6 +179,41 @@ class SeriesInfoController extends Controller
 
         return response()->json([
             'started' => true,
+            'trackingKey' => $trackingKey,
+        ]);
+    }
+
+    public function retryErrors(SeriesInfo $seriesInfo): JsonResponse
+    {
+        $trackingKey = (string) Str::uuid();
+
+        Log::info('Retry erreurs demandé.', [
+            'tracking_key'   => $trackingKey,
+            'series_info_id' => $seriesInfo->id,
+        ]);
+
+        Cache::put($this->trackingCacheKey($trackingKey), [
+            'state'               => 'running',
+            'message'             => 'Retry en file. En attente du worker...',
+            'episodesTotal'       => 0,
+            'episodesProcessed'   => 0,
+            'progressPercent'     => 0,
+            'seriesInfoId'        => $seriesInfo->id,
+            'seriesInfoTitle'     => $seriesInfo->title,
+            'currentEpisodeTitle' => null,
+            'lastError'           => null,
+            'updatedAt'           => now()->toIso8601String(),
+            'events'              => [[
+                'time'    => now()->format('H:i:s'),
+                'level'   => 'info',
+                'message' => 'Retry des épisodes en erreur initialisé.',
+            ]],
+        ], now()->addHours(2));
+
+        RunScrapeEpisodesJob::dispatch('', $trackingKey, true, $seriesInfo->id);
+
+        return response()->json([
+            'started'     => true,
             'trackingKey' => $trackingKey,
         ]);
     }

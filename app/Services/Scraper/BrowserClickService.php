@@ -40,6 +40,24 @@ class BrowserClickService
             // Étape 2 : clic method_free (soumet le formulaire step 1)
             [$html, $currentUrl] = $this->simulateClick($html, $currentUrl, 'method_free', $jar);
 
+            Log::info('BrowserClick: après method_free.', [
+                'current_url'  => $currentUrl,
+                'html_length'  => mb_strlen($html),
+                'has_downloadbtn' => str_contains($html, 'downloadbtn'),
+                'html_preview' => mb_substr(strip_tags($html), 0, 200),
+            ]);
+
+            // Tentative immédiate : URL déjà présente dans la page intermédiaire
+            $earlyUrl = $this->extractFinalUrl($html, $currentUrl);
+            if ($earlyUrl !== null) {
+                Log::info('BrowserClick: URL finale dans HTML intermédiaire.', ['final_url' => $earlyUrl]);
+
+                return ['success' => true, 'final_url' => $earlyUrl, 'final_html' => $html, 'error' => null];
+            }
+
+            // Petit délai pour éviter le rate-limit vdesk
+            usleep(800_000);
+
             // Étape 3 : clic downloadbtn (soumet le formulaire step 2)
             //           Le serveur répond avec un redirect 302 vers l'URL finale.
             //           On désactive le suivi pour capturer directement le header Location.
@@ -392,17 +410,16 @@ class BrowserClickService
             ->withHeaders([
                 'User-Agent'                => self::USER_AGENT,
                 'Accept'                    => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language'           => 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Accept-Encoding'           => 'gzip, deflate',
+                'Accept-Language'           => 'ar,fr-FR;q=0.9,en-US;q=0.8',
                 'Referer'                   => $referer,
-                'DNT'                       => '1',
-                'Connection'                => 'keep-alive',
                 'Upgrade-Insecure-Requests' => '1',
             ])
             ->withOptions([
                 'cookies'         => $jar,
                 'allow_redirects' => ['max' => 10, 'track_redirects' => true],
                 'verify'          => false,
+                'decode_content'  => false,
+                'curl'            => [CURLOPT_ENCODING => 'gzip, deflate'],
             ])
             ->timeout((int) config('scraper.http_timeout', 20));
     }
@@ -416,17 +433,16 @@ class BrowserClickService
             ->withHeaders([
                 'User-Agent'                => self::USER_AGENT,
                 'Accept'                    => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language'           => 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Accept-Encoding'           => 'gzip, deflate',
+                'Accept-Language'           => 'ar,fr-FR;q=0.9,en-US;q=0.8',
                 'Referer'                   => $referer,
-                'DNT'                       => '1',
-                'Connection'                => 'keep-alive',
                 'Upgrade-Insecure-Requests' => '1',
             ])
             ->withOptions([
                 'cookies'         => $jar,
                 'allow_redirects' => false,
                 'verify'          => false,
+                'decode_content'  => false,
+                'curl'            => [CURLOPT_ENCODING => 'gzip, deflate'],
             ])
             ->timeout((int) config('scraper.http_timeout', 20));
     }

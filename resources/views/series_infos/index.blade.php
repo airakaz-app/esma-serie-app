@@ -118,23 +118,50 @@
     @endif
 </div>
 
-<div id="addSeriesModal" class="position-fixed top-0 start-0 w-100 h-100 d-none align-items-center justify-content-center bg-black bg-opacity-75 p-3" style="z-index: 1050;">
-    <div class="card bg-dark text-light border-secondary w-100" style="max-width: 560px;">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-3">
+<div id="addSeriesModal" class="position-fixed top-0 start-0 w-100 h-100 d-none align-items-center justify-content-center bg-black bg-opacity-75 p-3" style="z-index: 1050; overflow-y: auto;">
+    <div class="card bg-dark text-light border-secondary w-100 my-auto" style="max-width: 600px;">
+        <div class="card-body d-flex flex-column gap-3">
+            <div class="d-flex justify-content-between align-items-center">
                 <h2 class="h5 mb-0">Ajouter une série</h2>
                 <button type="button" id="closeAddSeriesModal" class="btn-close btn-close-white" aria-label="Fermer"></button>
             </div>
 
+            {{-- Recherche --}}
+            <div>
+                <div class="input-group">
+                    <input
+                        type="text"
+                        id="searchQuery"
+                        class="form-control bg-dark text-light border-secondary"
+                        placeholder="Chercher par nom de série..."
+                        autocomplete="off"
+                        dir="auto"
+                    >
+                    <button type="button" id="searchBtn" class="btn btn-outline-light">
+                        <span id="searchSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
+                        Rechercher
+                    </button>
+                </div>
+                <div id="searchError" class="alert alert-warning py-2 px-3 mt-2 mb-0 d-none small"></div>
+            </div>
+
+            {{-- Résultats de recherche --}}
+            <div id="searchResults" class="d-none" style="max-height: 300px; overflow-y: auto;">
+                <div id="searchResultsList" class="d-flex flex-column gap-2"></div>
+            </div>
+
+            <hr class="border-secondary my-0">
+
+            {{-- Formulaire URL directe --}}
             <form id="addSeriesForm" class="d-flex flex-column gap-3">
                 <div>
-                    <label for="listPageUrl" class="form-label">URL de la page liste</label>
+                    <label for="listPageUrl" class="form-label small text-secondary mb-1">Ou collez l'URL directement</label>
                     <input
                         type="url"
                         id="listPageUrl"
                         name="list_page_url"
-                        class="form-control"
-                        placeholder="https://example.com/series"
+                        class="form-control bg-dark text-light border-secondary"
+                        placeholder="https://n.esheaq.onl/watch/slug/"
                         required
                     >
                 </div>
@@ -169,6 +196,82 @@
     const submitButton = document.getElementById('submitAddSeriesBtn');
     const spinnerElement = document.getElementById('addSeriesSpinner');
     const errorElement = document.getElementById('addSeriesError');
+
+    // Recherche externe
+    const searchQueryInput = document.getElementById('searchQuery');
+    const searchBtn = document.getElementById('searchBtn');
+    const searchSpinner = document.getElementById('searchSpinner');
+    const searchError = document.getElementById('searchError');
+    const searchResults = document.getElementById('searchResults');
+    const searchResultsList = document.getElementById('searchResultsList');
+    const listPageUrlInput = document.getElementById('listPageUrl');
+
+    const runSearch = async () => {
+        const q = searchQueryInput.value.trim();
+        if (q === '') return;
+
+        searchBtn.disabled = true;
+        searchSpinner.classList.remove('d-none');
+        searchError.classList.add('d-none');
+        searchResults.classList.add('d-none');
+        searchResultsList.innerHTML = '';
+
+        try {
+            const url = '{{ route('series-infos.search-external') }}?q=' + encodeURIComponent(q);
+            const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                searchError.textContent = data.error ?? 'Erreur lors de la recherche.';
+                searchError.classList.remove('d-none');
+                return;
+            }
+
+            if (!data.results || data.results.length === 0) {
+                searchError.textContent = 'Aucun résultat trouvé.';
+                searchError.classList.remove('d-none');
+                return;
+            }
+
+            data.results.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'd-flex align-items-center gap-3 p-2 rounded border border-secondary bg-black bg-opacity-25';
+
+                const img = item.image
+                    ? `<img src="${item.image}" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:4px;flex-shrink:0;" loading="lazy">`
+                    : `<div style="width:56px;height:56px;background:#333;border-radius:4px;flex-shrink:0;"></div>`;
+
+                card.innerHTML = `
+                    ${img}
+                    <div class="flex-grow-1 overflow-hidden">
+                        <div class="fw-semibold text-truncate" dir="auto">${item.title}</div>
+                        <div class="small text-secondary text-truncate">${item.url}</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-success flex-shrink-0">Ajouter</button>
+                `;
+
+                card.querySelector('button').addEventListener('click', () => {
+                    listPageUrlInput.value = item.url;
+                    addSeriesForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                });
+
+                searchResultsList.appendChild(card);
+            });
+
+            searchResults.classList.remove('d-none');
+        } catch (e) {
+            searchError.textContent = 'Erreur réseau : ' + e.message;
+            searchError.classList.remove('d-none');
+        } finally {
+            searchBtn.disabled = false;
+            searchSpinner.classList.add('d-none');
+        }
+    };
+
+    searchBtn.addEventListener('click', runSearch);
+    searchQueryInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
+    });
     const modalScrapeProgress = document.getElementById('modalScrapeProgress');
     const modalScrapeMessage = document.getElementById('modalScrapeMessage');
     const modalScrapePercent = document.getElementById('modalScrapePercent');
@@ -304,6 +407,10 @@
         modalScrapeDebug.textContent = '';
         lastProgressTimestamp = null;
         addSeriesForm.reset();
+        searchQueryInput.value = '';
+        searchError.classList.add('d-none');
+        searchResults.classList.add('d-none');
+        searchResultsList.innerHTML = '';
         toggleModal(true);
     });
 

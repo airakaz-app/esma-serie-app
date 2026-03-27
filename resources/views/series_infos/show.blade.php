@@ -76,20 +76,14 @@
         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
             <h2 class="h4 mb-0">Épisodes</h2>
 
-            @php
-                $refreshListPageUrl = $seriesInfo->series_page_url ?: $seriesInfo->source_episode_page_url;
-            @endphp
-
-            @if ($refreshListPageUrl)
-                <button
-                    type="button"
-                    id="refreshEpisodesButton"
-                    data-list-page-url="{{ $refreshListPageUrl }}"
-                    class="btn btn-outline-info btn-sm"
-                >
-                    Refresh épisodes
-                </button>
-            @endif
+            <button
+                type="button"
+                id="refreshEpisodesButton"
+                data-retry-url="{{ route('series-infos.retry-errors', $seriesInfo) }}"
+                class="btn btn-outline-warning btn-sm"
+            >
+                Retry erreurs
+            </button>
         </div>
 
         @if ($seriesInfo->episodes->isNotEmpty())
@@ -243,8 +237,7 @@
     </script>
 @endif
 
-@if ($refreshListPageUrl)
-    <script>
+<script>
         const refreshEpisodesButton = document.getElementById('refreshEpisodesButton');
         const refreshEpisodesError = document.getElementById('refreshEpisodesError');
         const scrapeLogsContainer = document.getElementById('scrapeLogsContainer');
@@ -382,27 +375,21 @@
             refreshEpisodesError.textContent = '';
             refreshEpisodesError.classList.add('d-none');
             setRefreshButtonState(true);
-            addScrapeLog('Lancement manuel du refresh des épisodes...');
-
-            const formData = new FormData();
-            formData.set('list_page_url', refreshEpisodesButton.dataset.listPageUrl ?? '');
-            formData.set('retry_errors', '1');
+            addScrapeLog('Retry des épisodes en erreur...');
 
             try {
-                const response = await fetch('{{ route('series-infos.scrape') }}', {
+                const response = await fetch(refreshEpisodesButton.dataset.retryUrl, {
                     method: 'POST',
                     headers: {
                         'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                     },
-                    body: formData,
                 });
 
                 const data = await response.json();
 
                 if (!response.ok) {
-                    const firstError = data?.errors?.list_page_url?.[0] ?? data?.message ?? 'Impossible de lancer le refresh.';
-                    throw new Error(firstError);
+                    throw new Error(data?.message ?? 'Impossible de lancer le retry.');
                 }
 
                 startPolling(data.trackingKey);
@@ -413,7 +400,6 @@
             }
         });
     </script>
-@endif
 
 <script>
     const bulkDeleteEpisodesButton = document.getElementById('bulkDeleteEpisodesButton');

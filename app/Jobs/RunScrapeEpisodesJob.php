@@ -20,21 +20,30 @@ class RunScrapeEpisodesJob implements ShouldQueue
         public string $listPageUrl,
         public string $trackingKey,
         public bool $retryErrors = false,
+        public ?int $seriesInfoId = null,
     ) {
     }
 
     public function handle(): void
     {
         Log::info('Démarrage du job de scraping.', [
-            'tracking_key' => $this->trackingKey,
-            'list_page_url' => $this->listPageUrl,
+            'tracking_key'   => $this->trackingKey,
+            'list_page_url'  => $this->listPageUrl,
+            'series_info_id' => $this->seriesInfoId,
         ]);
 
-        $exitCode = Artisan::call('scrape:episodes', [
-            '--list-page-url' => $this->listPageUrl,
-            '--tracking-key' => $this->trackingKey,
-            '--retry-errors' => $this->retryErrors,
-        ]);
+        $args = [
+            '--tracking-key'  => $this->trackingKey,
+            '--retry-errors'  => $this->retryErrors,
+        ];
+
+        if ($this->seriesInfoId !== null) {
+            $args['--series-info-id'] = $this->seriesInfoId;
+        } else {
+            $args['--list-page-url'] = $this->listPageUrl;
+        }
+
+        $exitCode = Artisan::call('scrape:episodes', $args);
 
         Log::info('Fin du job de scraping.', [
             'tracking_key' => $this->trackingKey,

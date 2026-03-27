@@ -16,12 +16,14 @@ class HtmlFetcher
             ->withHeaders([
                 'User-Agent'      => self::USER_AGENT,
                 'Accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language' => 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Accept-Encoding' => 'gzip, deflate',
-                'DNT'             => '1',
-                'Connection'      => 'keep-alive',
+                'Accept-Language' => 'ar,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7',
             ])
-            ->withOptions(['allow_redirects' => ['max' => 10], 'verify' => false])
+            ->withOptions([
+                'allow_redirects' => ['max' => 10],
+                'verify'          => false,
+                'decode_content'  => false,
+                'curl'            => [CURLOPT_ENCODING => 'gzip, deflate'],
+            ])
             ->timeout((int) config('scraper.http_timeout', 20))
             ->get($url)
             ->throw()
