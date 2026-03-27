@@ -183,6 +183,10 @@
                 @php
                     $playableServer = $episode->servers->first(fn ($server): bool => (string) $server->final_url !== '');
                     $playableUrl = $playableServer?->final_url;
+                    $episodeVideoKey = 'episode-'.$episode->id;
+                    $episodeHistory = $watchHistoriesByKey->get($episodeVideoKey);
+                    $episodeAlreadyWatched = $episodeHistory !== null && ((int) $episodeHistory->current_time > 0 || (bool) $episodeHistory->completed);
+                    $episodeCompleted = $episodeHistory !== null && (bool) $episodeHistory->completed;
                 @endphp
 
                 <div class="col">
@@ -230,9 +234,12 @@
                                             data-bs-toggle="modal"
                                             data-bs-target="#videoPlayerModal"
                                             data-video-url="{{ $playableUrl }}"
-                                            data-video-key="episode-{{ $episode->id }}"
+                                            data-video-key="{{ $episodeVideoKey }}"
                                             data-video-title="{{ $episode->title }}"
                                         >
+                                            @if ($episodeAlreadyWatched)
+                                                <span aria-hidden="true">👁️</span>
+                                            @endif
                                             Lire
                                         </button>
 
@@ -252,7 +259,12 @@
                                 </div>
                             </div>
 
-                            <h3 class="h6 card-title mb-2">{{ $episode->title }}</h3>
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <h3 class="h6 card-title mb-0">{{ $episode->title }}</h3>
+                                @if ($episodeCompleted)
+                                    <span class="badge text-bg-success">Terminé</span>
+                                @endif
+                            </div>
                             <p class="small mb-0 {{ $playableUrl ? 'text-info' : 'text-secondary' }}">
                                 @if ($playableUrl)
                                     Lire ou télécharger maintenant
