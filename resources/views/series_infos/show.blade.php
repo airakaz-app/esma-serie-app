@@ -743,6 +743,24 @@
         });
     };
 
+    const tryAutoPlay = async (videoPlayer) => {
+        try {
+            await videoPlayer.play();
+            return true;
+        } catch (_error) {
+            try {
+                videoPlayer.muted = true;
+                await videoPlayer.play();
+                window.setTimeout(() => {
+                    videoPlayer.muted = false;
+                }, 150);
+                return true;
+            } catch (_secondError) {
+                return false;
+            }
+        }
+    };
+
     if (videoPlayerModalElement && videoElement) {
         videoPlayerModalElement.addEventListener('show.bs.modal', async (event) => {
             const trigger = event.relatedTarget;
@@ -782,14 +800,19 @@
                     },
                 ],
             };
-            await waitForVideoMetadata(player.media);
 
             if (saveIntervalId !== null) {
                 window.clearInterval(saveIntervalId);
                 saveIntervalId = null;
             }
 
+            const autoPlayStarted = await tryAutoPlay(player);
+            if (!autoPlayStarted) {
+                updateVideoStatus('Cliquez sur lecture pour démarrer la vidéo.');
+            }
+
             try {
+                await waitForVideoMetadata(player.media);
                 const history = await loadProgress(videoKey, videoUrl);
                 const canResume = history && !history.completed && Number(history.current_time) > 0;
                 if (canResume) {
@@ -797,21 +820,15 @@
                     player.currentTime = resumeTime;
                     updateVideoStatus(`Reprise à ${resumeTime}s.`);
                 } else {
-                    updateVideoStatus('Lecture démarrée.');
+                    updateVideoStatus(autoPlayStarted ? 'Lecture démarrée.' : 'Prêt à lancer la lecture.');
                 }
             } catch (_error) {
-                updateVideoStatus('Lecture démarrée.');
+                updateVideoStatus(autoPlayStarted ? 'Lecture démarrée.' : 'Prêt à lancer la lecture.');
             }
 
             saveIntervalId = window.setInterval(() => {
                 saveProgress(false, true);
             }, 10000);
-
-            try {
-                await player.play();
-            } catch (_error) {
-                updateVideoStatus('Cliquez sur lecture pour démarrer la vidéo.');
-            }
         });
 
         videoPlayerModalElement.addEventListener('hidden.bs.modal', async () => {
