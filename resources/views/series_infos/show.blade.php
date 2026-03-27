@@ -7,6 +7,47 @@
     <title>{{ $seriesInfo->title ?: 'Série' }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+    <style>
+        #videoPlayerModal .modal-dialog {
+            max-width: min(96vw, 1400px);
+            margin: 1rem auto;
+        }
+
+        #videoPlayerModal .modal-content {
+            height: min(95vh, 920px);
+        }
+
+        #videoPlayerModal .modal-body {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        #videoPlayerModal .video-player-frame {
+            flex: 1 1 auto;
+            min-height: 260px;
+            max-height: calc(95vh - 180px);
+            border-radius: 0.5rem;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        #videoPlayerModal .video-player-frame video,
+        #videoPlayerModal .video-player-frame .plyr {
+            width: 100%;
+            height: 100%;
+        }
+
+        @media (max-height: 760px) {
+            #videoPlayerModal .modal-content {
+                height: 100vh;
+            }
+
+            #videoPlayerModal .video-player-frame {
+                max-height: calc(100vh - 160px);
+            }
+        }
+    </style>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
@@ -234,17 +275,17 @@
 </div>
 
 <div class="modal fade" id="videoPlayerModal" tabindex="-1" aria-labelledby="videoPlayerModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-lg-down">
         <div class="modal-content bg-dark text-light border border-secondary-subtle">
             <div class="modal-header">
                 <h5 class="modal-title" id="videoPlayerModalLabel">Lecture vidéo</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
             </div>
-            <div class="modal-body">
-                <div class="ratio ratio-16x9 bg-black rounded overflow-hidden">
+            <div class="modal-body p-2 p-md-3 gap-2">
+                <div class="video-player-frame">
                     <video id="episodeVideoPlayer" playsinline controls class="w-100 h-100"></video>
                 </div>
-                <p class="small text-secondary mt-3 mb-0" id="videoPlayerStatus"></p>
+                <p class="small text-secondary mb-0" id="videoPlayerStatus"></p>
             </div>
         </div>
     </div>
