@@ -20,7 +20,13 @@
             <p class="text-secondary mb-0">Cliquez sur une carte pour afficher les épisodes liés.</p>
         </div>
 
-        <button type="button" id="openAddSeriesModal" class="btn btn-primary">Ajouter</button>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" id="openAddSeriesModal" class="btn btn-primary">Ajouter</button>
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button type="submit" class="btn btn-outline-light">Déconnexion</button>
+            </form>
+        </div>
     </header>
 
     <div id="globalScrapeProgress" class="alert alert-info d-none mb-4">
