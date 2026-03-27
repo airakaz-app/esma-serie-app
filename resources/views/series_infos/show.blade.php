@@ -10,7 +10,13 @@
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
 <div class="container py-4 py-lg-5">
-    <a href="{{ route('series-infos.index') }}" class="text-decoration-none text-info">← Retour aux séries</a>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <a href="{{ route('series-infos.index') }}" class="text-decoration-none text-info">← Retour aux séries</a>
+        <form method="POST" action="{{ route('logout') }}">
+            @csrf
+            <button type="submit" class="btn btn-outline-light btn-sm">Déconnexion</button>
+        </form>
+    </div>
 
     @if (session('status'))
         <div class="alert alert-success mt-3">{{ session('status') }}</div>
