@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthenticatedSessionController;
 use App\Http\Controllers\SeriesInfoController;
+use App\Http\Controllers\VideoWatchHistoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function (): void {
@@ -24,4 +25,7 @@ Route::middleware('auth')->group(function (): void {
     Route::delete('/series-infos/{seriesInfo}/episodes/{episode}', [SeriesInfoController::class, 'destroyEpisode'])->name('series-infos.episodes.destroy');
     Route::delete('/series-infos/{seriesInfo}/episodes', [SeriesInfoController::class, 'bulkDestroyEpisodes'])->name('series-infos.episodes.bulk-destroy');
     Route::get('/series-infos/{seriesInfo}/episodes/{episode}/download', [SeriesInfoController::class, 'downloadEpisode'])->name('series-infos.episodes.download');
+
+    Route::get('/video-watch-histories', [VideoWatchHistoryController::class, 'show'])->name('video-watch-histories.show');
+    Route::put('/video-watch-histories', [VideoWatchHistoryController::class, 'upsert'])->name('video-watch-histories.upsert');
 });
