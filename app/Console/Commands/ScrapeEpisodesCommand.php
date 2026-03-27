@@ -68,9 +68,9 @@ class ScrapeEpisodesCommand extends Command
         ]);
         $this->updateTrackingStatus('running', 'Initialisation du scraping...');
 
-        $listUrl = (string) ($this->option('list-page-url') ?: config('scraper.list_page_url'));
+        $listUrl = (string) ($this->option('list-page-url') ?: '');
         if ($listUrl === '' && ! $this->option('episode-id')) {
-            $this->error('SCRAPER_LIST_PAGE_URL est vide.');
+            $this->error('URL de la liste manquante (option --list-page-url requise).');
             $this->updateTrackingStatus('error', 'URL de liste manquante.');
 
             return self::FAILURE;
@@ -461,7 +461,7 @@ class ScrapeEpisodesCommand extends Command
                     'iframe_url' => $server->iframe_url,
                 ]);
 
-                $browserResult = $this->browser->resolveDownloadUrl($server->iframe_url);
+                $browserResult = $this->browser->resolveDownloadUrl($server->iframe_url, $server->server_page_url);
 
                 Log::info('Résultat BrowserClickService.', [
                     'server_id' => $server->id,

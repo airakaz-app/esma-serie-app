@@ -77,7 +77,7 @@ class EpisodeListScraper
             return null;
         }
 
-        foreach (['src', 'data-src', 'data-lazy-src', 'data-original'] as $attribute) {
+        foreach (['src', 'data-src', 'data-image', 'data-lazy-src', 'data-original'] as $attribute) {
             $candidate = trim((string) $imageNode->getAttribute($attribute));
             if ($candidate !== '') {
                 return $this->resolveUrl($baseUrl, $candidate);
