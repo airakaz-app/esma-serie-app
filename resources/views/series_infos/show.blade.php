@@ -725,6 +725,24 @@
         return data.history ?? null;
     };
 
+    const waitForVideoMetadata = (mediaElement) => {
+        return new Promise((resolve) => {
+            if (!mediaElement) {
+                resolve();
+                return;
+            }
+
+            if (mediaElement.readyState >= 1) {
+                resolve();
+                return;
+            }
+
+            mediaElement.addEventListener('loadedmetadata', () => {
+                resolve();
+            }, { once: true });
+        });
+    };
+
     if (videoPlayerModalElement && videoElement) {
         videoPlayerModalElement.addEventListener('show.bs.modal', async (event) => {
             const trigger = event.relatedTarget;
@@ -749,14 +767,22 @@
                 modalTitle.textContent = videoTitle;
             }
 
-            videoElement.innerHTML = `<source src="${videoUrl}" type="video/mp4">`;
-            videoElement.load();
-
             if (player === null) {
                 player = new Plyr(videoElement, {
                     controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
                 });
             }
+
+            player.source = {
+                type: 'video',
+                sources: [
+                    {
+                        src: videoUrl,
+                        type: 'video/mp4',
+                    },
+                ],
+            };
+            await waitForVideoMetadata(player.media);
 
             if (saveIntervalId !== null) {
                 window.clearInterval(saveIntervalId);
@@ -781,7 +807,11 @@
                 saveProgress(false, true);
             }, 10000);
 
-            player.play();
+            try {
+                await player.play();
+            } catch (_error) {
+                updateVideoStatus('Cliquez sur lecture pour démarrer la vidéo.');
+            }
         });
 
         videoPlayerModalElement.addEventListener('hidden.bs.modal', async () => {
