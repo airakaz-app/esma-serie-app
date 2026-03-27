@@ -47,6 +47,12 @@
                 max-height: calc(100vh - 160px);
             }
         }
+
+        @media (min-width: 1920px) and (min-height: 1080px) {
+            .hide-download-on-tv {
+                display: none !important;
+            }
+        }
     </style>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
@@ -139,10 +145,10 @@
                 <button type="submit" class="btn btn-outline-danger btn-sm" id="bulkDeleteEpisodesButton" disabled>
                     Supprimer la sélection
                 </button>
-                <button type="button" class="btn btn-outline-success btn-sm" id="bulkDownloadEpisodesButton" disabled>
+                <button type="button" class="btn btn-outline-success btn-sm hide-download-on-tv" id="bulkDownloadEpisodesButton" disabled>
                     Télécharger la sélection
                 </button>
-                <button type="button" class="btn btn-success btn-sm" id="downloadSeriesButton">
+                <button type="button" class="btn btn-success btn-sm hide-download-on-tv" id="downloadSeriesButton">
                     Télécharger toute la série
                 </button>
             </form>
@@ -245,7 +251,7 @@
 
                                         <a
                                             href="{{ route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}"
-                                            class="btn btn-outline-success btn-sm"
+                                            class="btn btn-outline-success btn-sm hide-download-on-tv"
                                         >
                                             Télécharger
                                         </a>
