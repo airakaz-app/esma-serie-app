@@ -7,6 +7,7 @@ use App\Http\Requests\DeleteEpisodesRequest;
 use App\Jobs\RunScrapeEpisodesJob;
 use App\Models\Episode;
 use App\Models\SeriesInfo;
+use App\Models\VideoWatchHistory;
 use App\Services\Scraper\HtmlFetcher;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -34,7 +35,7 @@ class SeriesInfoController extends Controller
         ]);
     }
 
-    public function show(SeriesInfo $seriesInfo): View
+    public function show(SeriesInfo $seriesInfo, Request $request): View
     {
         $seriesInfo->load([
             'episodes' => function ($query): void {
@@ -47,8 +48,24 @@ class SeriesInfoController extends Controller
             },
         ]);
 
+        $watchHistoriesByKey = collect();
+        $user = $request->user();
+
+        if ($user !== null) {
+            $episodeVideoKeys = $seriesInfo->episodes
+                ->map(fn (Episode $episode): string => 'episode-'.$episode->id)
+                ->all();
+
+            $watchHistoriesByKey = VideoWatchHistory::query()
+                ->where('user_id', $user->id)
+                ->whereIn('video_key', $episodeVideoKeys)
+                ->get()
+                ->keyBy('video_key');
+        }
+
         return view('series_infos.show', [
             'seriesInfo' => $seriesInfo,
+            'watchHistoriesByKey' => $watchHistoriesByKey,
         ]);
     }
 
