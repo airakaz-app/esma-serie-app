@@ -6,6 +6,48 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $seriesInfo->title ?: 'Série' }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+    <style>
+        #videoPlayerModal .modal-dialog {
+            max-width: min(96vw, 1400px);
+            margin: 1rem auto;
+        }
+
+        #videoPlayerModal .modal-content {
+            height: min(95vh, 920px);
+        }
+
+        #videoPlayerModal .modal-body {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        #videoPlayerModal .video-player-frame {
+            flex: 1 1 auto;
+            min-height: 260px;
+            max-height: calc(95vh - 180px);
+            border-radius: 0.5rem;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        #videoPlayerModal .video-player-frame video,
+        #videoPlayerModal .video-player-frame .plyr {
+            width: 100%;
+            height: 100%;
+        }
+
+        @media (max-height: 760px) {
+            #videoPlayerModal .modal-content {
+                height: 100vh;
+            }
+
+            #videoPlayerModal .video-player-frame {
+                max-height: calc(100vh - 160px);
+            }
+        }
+    </style>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
@@ -182,14 +224,17 @@
 
                                 <div class="d-flex flex-column gap-2 align-items-end">
                                     @if ($playableUrl)
-                                        <a
-                                            href="{{ $playableUrl }}"
-                                            target="_blank"
-                                            rel="noopener"
+                                        <button
+                                            type="button"
                                             class="btn btn-outline-info btn-sm"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#videoPlayerModal"
+                                            data-video-url="{{ $playableUrl }}"
+                                            data-video-key="episode-{{ $episode->id }}"
+                                            data-video-title="{{ $episode->title }}"
                                         >
                                             Lire
-                                        </a>
+                                        </button>
 
                                         <a
                                             href="{{ route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}"
@@ -227,6 +272,23 @@
             @endforelse
         </div>
     </section>
+</div>
+
+<div class="modal fade" id="videoPlayerModal" tabindex="-1" aria-labelledby="videoPlayerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-lg-down">
+        <div class="modal-content bg-dark text-light border border-secondary-subtle">
+            <div class="modal-header">
+                <h5 class="modal-title" id="videoPlayerModalLabel">Lecture vidéo</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            <div class="modal-body p-2 p-md-3 gap-2">
+                <div class="video-player-frame">
+                    <video id="episodeVideoPlayer" playsinline controls class="w-100 h-100"></video>
+                </div>
+                <p class="small text-secondary mb-0" id="videoPlayerStatus"></p>
+            </div>
+        </div>
+    </div>
 </div>
 
 @if ($isScrapingInProgress)
@@ -530,6 +592,252 @@
     }
 
     updateBulkDeleteState();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+<script>
+    const videoPlayerModalElement = document.getElementById('videoPlayerModal');
+    const videoElement = document.getElementById('episodeVideoPlayer');
+    const videoPlayerStatus = document.getElementById('videoPlayerStatus');
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+    const isAuthenticated = {{ auth()->check() ? 'true' : 'false' }};
+    const historyShowUrl = "{{ route('video-watch-histories.show') }}";
+    const historyUpsertUrl = "{{ route('video-watch-histories.upsert') }}";
+    let player = null;
+    let activeVideo = null;
+    let saveIntervalId = null;
+    let isSaving = false;
+
+    const updateVideoStatus = (message) => {
+        if (!videoPlayerStatus) {
+            return;
+        }
+
+        videoPlayerStatus.textContent = message;
+    };
+
+    const fallbackStorageKey = (videoKey) => {
+        return `video-progress:${videoKey}`;
+    };
+
+    const saveLocalProgress = (payload) => {
+        window.localStorage.setItem(fallbackStorageKey(payload.video_key), JSON.stringify(payload));
+    };
+
+    const getLocalProgress = (videoKey) => {
+        const rawValue = window.localStorage.getItem(fallbackStorageKey(videoKey));
+        if (rawValue === null) {
+            return null;
+        }
+
+        try {
+            return JSON.parse(rawValue);
+        } catch (_error) {
+            return null;
+        }
+    };
+
+    const getProgressPayload = (markAsCompleted = false) => {
+        if (!player || !activeVideo) {
+            return null;
+        }
+
+        const duration = Number.isFinite(player.duration) && player.duration > 0 ? Math.round(player.duration) : 0;
+        const currentTime = Number.isFinite(player.currentTime) && player.currentTime > 0 ? Math.round(player.currentTime) : 0;
+        const completed = markAsCompleted || (duration > 0 && currentTime >= Math.max(duration - 2, 0));
+
+        return {
+            video_key: activeVideo.videoKey,
+            video_url: activeVideo.videoUrl,
+            current_time: completed ? duration : Math.min(currentTime, duration || currentTime),
+            duration,
+            completed,
+            last_watched_at: (new Date()).toISOString(),
+        };
+    };
+
+    const saveProgress = async (markAsCompleted = false, silent = false) => {
+        if (isSaving) {
+            return;
+        }
+
+        const payload = getProgressPayload(markAsCompleted);
+        if (!payload) {
+            return;
+        }
+
+        if (!isAuthenticated) {
+            saveLocalProgress(payload);
+            if (!silent) {
+                updateVideoStatus(payload.completed ? 'Lecture terminée (mode invité).' : 'Progression sauvegardée localement.');
+            }
+            return;
+        }
+
+        isSaving = true;
+
+        try {
+            const response = await fetch(historyUpsertUrl, {
+                method: 'PUT',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok && !silent) {
+                updateVideoStatus('Impossible de sauvegarder votre progression pour le moment.');
+            } else if (!silent) {
+                updateVideoStatus(payload.completed ? 'Lecture terminée.' : 'Progression sauvegardée.');
+            }
+        } finally {
+            isSaving = false;
+        }
+    };
+
+    const loadProgress = async (videoKey, videoUrl) => {
+        if (!isAuthenticated) {
+            const localHistory = getLocalProgress(videoKey);
+            if (localHistory?.video_url === videoUrl) {
+                return localHistory;
+            }
+
+            return null;
+        }
+
+        const params = new URLSearchParams({
+            video_key: videoKey,
+            video_url: videoUrl,
+        });
+        const response = await fetch(`${historyShowUrl}?${params.toString()}`, {
+            headers: {
+                'Accept': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        const data = await response.json();
+        return data.history ?? null;
+    };
+
+    const waitForVideoMetadata = (mediaElement) => {
+        return new Promise((resolve) => {
+            if (!mediaElement) {
+                resolve();
+                return;
+            }
+
+            if (mediaElement.readyState >= 1) {
+                resolve();
+                return;
+            }
+
+            mediaElement.addEventListener('loadedmetadata', () => {
+                resolve();
+            }, { once: true });
+        });
+    };
+
+    if (videoPlayerModalElement && videoElement) {
+        videoPlayerModalElement.addEventListener('show.bs.modal', async (event) => {
+            const trigger = event.relatedTarget;
+            if (!(trigger instanceof HTMLElement)) {
+                return;
+            }
+
+            const videoUrl = trigger.dataset.videoUrl ?? '';
+            const videoKey = trigger.dataset.videoKey ?? '';
+            const videoTitle = trigger.dataset.videoTitle ?? 'Lecture vidéo';
+            if (!videoUrl || !videoKey) {
+                return;
+            }
+
+            activeVideo = {
+                videoUrl,
+                videoKey,
+            };
+
+            const modalTitle = document.getElementById('videoPlayerModalLabel');
+            if (modalTitle) {
+                modalTitle.textContent = videoTitle;
+            }
+
+            if (player === null) {
+                player = new Plyr(videoElement, {
+                    controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
+                });
+            }
+
+            player.source = {
+                type: 'video',
+                sources: [
+                    {
+                        src: videoUrl,
+                        type: 'video/mp4',
+                    },
+                ],
+            };
+            await waitForVideoMetadata(player.media);
+
+            if (saveIntervalId !== null) {
+                window.clearInterval(saveIntervalId);
+                saveIntervalId = null;
+            }
+
+            try {
+                const history = await loadProgress(videoKey, videoUrl);
+                const canResume = history && !history.completed && Number(history.current_time) > 0;
+                if (canResume) {
+                    const resumeTime = Math.max(Number(history.current_time), 0);
+                    player.currentTime = resumeTime;
+                    updateVideoStatus(`Reprise à ${resumeTime}s.`);
+                } else {
+                    updateVideoStatus('Lecture démarrée.');
+                }
+            } catch (_error) {
+                updateVideoStatus('Lecture démarrée.');
+            }
+
+            saveIntervalId = window.setInterval(() => {
+                saveProgress(false, true);
+            }, 10000);
+
+            try {
+                await player.play();
+            } catch (_error) {
+                updateVideoStatus('Cliquez sur lecture pour démarrer la vidéo.');
+            }
+        });
+
+        videoPlayerModalElement.addEventListener('hidden.bs.modal', async () => {
+            if (saveIntervalId !== null) {
+                window.clearInterval(saveIntervalId);
+                saveIntervalId = null;
+            }
+
+            await saveProgress(false, true);
+
+            if (player) {
+                player.pause();
+                player.currentTime = 0;
+            }
+
+            videoElement.removeAttribute('src');
+            videoElement.innerHTML = '';
+            videoElement.load();
+            activeVideo = null;
+            updateVideoStatus('');
+        });
+
+        videoElement.addEventListener('ended', () => {
+            saveProgress(true);
+        });
+    }
 </script>
 </body>
 </html>
