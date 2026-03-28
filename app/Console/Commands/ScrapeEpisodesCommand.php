@@ -107,7 +107,17 @@ class ScrapeEpisodesCommand extends Command
             'limit' => $limit,
         ]);
 
+        $episodeIndex = 0;
+
         foreach ($episodeQuery->lazyById(100) as $episode) {
+            // Délai anti-rate-limit entre chaque épisode (sauf le premier).
+            // vdesk.live bloque les requêtes trop rapprochées et renvoie une page
+            // d'erreur (~13 056 o) sans l'URL vidéo.
+            if ($episodeIndex > 0) {
+                usleep(1_200_000); // 1,2 s
+            }
+            $episodeIndex++;
+
             $this->currentEpisodeTitle = $episode->title;
             $this->line("- Épisode #{$episode->id}: {$episode->title}");
             $this->updateTrackingStatus(
@@ -308,7 +318,14 @@ class ScrapeEpisodesCommand extends Command
 
             $this->upsertEpisodeServers($episode, $servers);
 
-            $serverQuery = $episode->servers()->orderBy('id');
+            // Ordonner par priorité d'hôte (vidspeed > vidoba > vdesk)
+            $hostPriority = config('scraper.host_priority', ['vidspeed', 'vidoba', 'vdesk']);
+            $orderCase = collect($hostPriority)
+                ->map(fn (string $h, int $i): string => "WHEN LOWER(host) = '" . addslashes(mb_strtolower($h)) . "' THEN {$i}")
+                ->implode(' ');
+            $orderExpr = $orderCase !== '' ? "CASE {$orderCase} ELSE 999 END" : 'id';
+
+            $serverQuery = $episode->servers()->orderByRaw($orderExpr);
 
             if ($this->option('only-pending')) {
                 $serverQuery->where('status', EpisodeServer::STATUS_PENDING);
@@ -393,7 +410,7 @@ class ScrapeEpisodesCommand extends Command
     }
 
     /**
-     * @param array<int, array{server_name:?string,host:?string,server_page_url:string}> $servers
+     * @param array<int, array{server_name:?string,host:?string,server_page_url:string,iframe_url:?string}> $servers
      */
     private function upsertEpisodeServers(Episode $episode, array $servers): void
     {
@@ -410,6 +427,7 @@ class ScrapeEpisodesCommand extends Command
                 'episode_id' => $episode->id,
                 'server_name' => $server['server_name'],
                 'host' => $server['host'],
+                'iframe_url' => $server['iframe_url'] ?? null,
                 'updated_at' => $now,
                 'created_at' => $now,
             ])
@@ -423,7 +441,7 @@ class ScrapeEpisodesCommand extends Command
         EpisodeServer::query()->upsert(
             $payload,
             ['server_page_url'],
-            ['episode_id', 'server_name', 'host', 'updated_at'],
+            ['episode_id', 'server_name', 'host', 'iframe_url', 'updated_at'],
         );
     }
 
@@ -486,7 +504,7 @@ class ScrapeEpisodesCommand extends Command
                     'server_page_url' => $server->server_page_url,
                 ]);
 
-                $server->iframe_url = $this->pageScraper->extractIframeUrl($server->server_page_url);
+                $server->iframe_url = $this->pageScraper->extractIframeUrl($server->server_page_url, $server->host ?? '');
                 $server->save();
 
                 Log::info('Résultat extraction iframe_url.', [

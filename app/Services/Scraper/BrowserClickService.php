@@ -17,6 +17,12 @@ class BrowserClickService
     public function __construct(private readonly Factory $http) {}
 
     /**
+     * Taille minimale (octets) d'une réponse vdesk considérée comme valide.
+     * En dessous de ce seuil, c'est une page d'erreur/rate-limit (env. 13 056 o).
+     */
+    private const VDESK_MIN_VALID_HTML = 15_000;
+
+    /**
      * @return array{success:bool,final_url:?string,final_html:?string,error:?string}
      */
     public function resolveDownloadUrl(string $iframeUrl, ?string $referer = null): array
@@ -27,71 +33,263 @@ class BrowserClickService
         Log::info('BrowserClick: début résolution.', ['iframe_url' => $iframeUrl, 'referer' => $referer]);
 
         try {
-            // Étape 1 : charger la page iframe
+            // ── Étape 1 : charger la page embed ──────────────────────────────────────────
             $response   = $this->client($referer, $jar)->get($iframeUrl)->throw();
             $currentUrl = (string) ($response->effectiveUri() ?? $iframeUrl);
             $html       = $response->body();
 
-            Log::info('BrowserClick: page chargée.', [
+            Log::info('BrowserClick: page initiale chargée.', [
                 'current_url' => $currentUrl,
                 'html_length' => mb_strlen($html),
             ]);
 
-            // Étape 2 : clic method_free (soumet le formulaire step 1)
+            // ── Tentative rapide : URL déjà dans le HTML initial (avant tout POST) ───────
+            $earlyScript = $this->extractJwPlayerScriptUrl($html);
+            if ($earlyScript !== null) {
+                Log::info('BrowserClick: URL extraite depuis HTML initial (sans POST).', ['final_url' => $earlyScript]);
+
+                return ['success' => true, 'final_url' => $earlyScript, 'final_html' => $html, 'error' => null];
+            }
+
+            // ── Étape 2 : POST #method_free pour débloquer la page vidéo ─────────────────
+            // vdesk requiert ce POST pour servir le HTML complet (~19 740 o) avec l'URL S3.
             [$html, $currentUrl] = $this->simulateClick($html, $currentUrl, 'method_free', $jar);
 
+            $htmlLen = mb_strlen($html);
+
             Log::info('BrowserClick: après method_free.', [
-                'current_url'  => $currentUrl,
-                'html_length'  => mb_strlen($html),
+                'current_url'     => $currentUrl,
+                'html_length'     => $htmlLen,
                 'has_downloadbtn' => str_contains($html, 'downloadbtn'),
-                'html_preview' => mb_substr(strip_tags($html), 0, 200),
             ]);
 
-            // Tentative immédiate : URL déjà présente dans la page intermédiaire
+            // Si la réponse est trop petite, vdesk a renvoyé une page de rate-limit.
+            // On retente jusqu'à 3 fois avec délai croissant.
+            if ($htmlLen < self::VDESK_MIN_VALID_HTML) {
+                $retryDelays = [5_000_000, 10_000_000, 15_000_000]; // 5s, 10s, 15s
+                $retried = false;
+
+                foreach ($retryDelays as $attempt => $delay) {
+                    Log::warning('BrowserClick: réponse trop petite (rate-limit ?), attente ' . ($delay / 1_000_000) . 's (tentative ' . ($attempt + 1) . ').', [
+                        'html_length' => $htmlLen,
+                        'threshold'   => self::VDESK_MIN_VALID_HTML,
+                    ]);
+
+                    usleep($delay);
+
+                    // Nouvelle session (cookies propres)
+                    $jarN = new CookieJar();
+                    $responseN = $this->client($referer, $jarN)->get($iframeUrl)->throw();
+                    $html       = $responseN->body();
+                    $currentUrl = (string) ($responseN->effectiveUri() ?? $iframeUrl);
+                    [$html, $currentUrl] = $this->simulateClick($html, $currentUrl, 'method_free', $jarN);
+                    $htmlLen = mb_strlen($html);
+                    $jar = $jarN;
+
+                    Log::info('BrowserClick: après retry method_free #' . ($attempt + 1) . '.', [
+                        'html_length' => $htmlLen,
+                    ]);
+
+                    if ($htmlLen >= self::VDESK_MIN_VALID_HTML) {
+                        $retried = true;
+                        break;
+                    }
+                }
+
+                if (! $retried) {
+                    Log::warning('BrowserClick: rate-limit persistant après 3 tentatives.');
+                }
+            }
+
+            // ── Stratégie A : script JWPlayer eval(function(p,a,c,k,e,d){...}) ──────────
+            // C'est la méthode la plus fiable : l'eval pack est dans le HTML serveur
+            // et contient le paramètre `file:"https://s3.vdesk.live:8080/..."`.
+            $jwScriptUrl = $this->extractJwPlayerScriptUrl($html);
+            if ($jwScriptUrl !== null) {
+                Log::info('BrowserClick: URL extraite depuis script JWPlayer eval().', ['final_url' => $jwScriptUrl]);
+
+                return ['success' => true, 'final_url' => $jwScriptUrl, 'final_html' => $html, 'error' => null];
+            }
+
+            // ── Stratégie B : balise <video class="jw-video" src="..."> ─────────────────
+            // Présent si JWPlayer écrit le tag vidéo directement côté serveur.
+            $jwVideoSrc = $this->extractJwVideoSrc($html);
+            if ($jwVideoSrc !== null) {
+                Log::info('BrowserClick: URL extraite depuis <video class="jw-video">.', ['final_url' => $jwVideoSrc]);
+
+                return ['success' => true, 'final_url' => $jwVideoSrc, 'final_html' => $html, 'error' => null];
+            }
+
+            // ── Stratégie C : recherche générique dans le HTML ───────────────────────────
             $earlyUrl = $this->extractFinalUrl($html, $currentUrl);
             if ($earlyUrl !== null) {
-                Log::info('BrowserClick: URL finale dans HTML intermédiaire.', ['final_url' => $earlyUrl]);
+                Log::info('BrowserClick: URL finale dans HTML (extractFinalUrl).', ['final_url' => $earlyUrl]);
 
                 return ['success' => true, 'final_url' => $earlyUrl, 'final_html' => $html, 'error' => null];
             }
 
-            // Petit délai pour éviter le rate-limit vdesk
+            // ── Stratégie D : formulaire #downloadbtn (redirect 302 → URL finale) ───────
             usleep(800_000);
 
-            // Étape 3 : clic downloadbtn (soumet le formulaire step 2)
-            //           Le serveur répond avec un redirect 302 vers l'URL finale.
-            //           On désactive le suivi pour capturer directement le header Location.
             $finalUrl = $this->submitFinalStep($html, $currentUrl, 'downloadbtn', $jar);
-
             if ($finalUrl !== null) {
-                Log::info('BrowserClick: URL finale trouvée via redirect.', ['final_url' => $finalUrl]);
+                Log::info('BrowserClick: URL finale trouvée via redirect #downloadbtn.', ['final_url' => $finalUrl]);
 
                 return ['success' => true, 'final_url' => $finalUrl, 'final_html' => $html, 'error' => null];
             }
 
-            // Fallback : chercher l'URL dans le HTML si pas de redirect
-            $finalUrl = $this->extractFinalUrl($html, $currentUrl);
+            // ── Aucune stratégie n'a fonctionné ──────────────────────────────────────────
+            Log::warning('BrowserClick: aucune URL finale détectée.', ['current_url' => $currentUrl]);
 
-            if ($finalUrl === null) {
-                Log::warning('BrowserClick: aucune URL finale détectée.', ['current_url' => $currentUrl]);
-
-                return [
-                    'success'    => false,
-                    'final_url'  => null,
-                    'final_html' => $html,
-                    'error'      => 'Aucun lien de téléchargement détecté.',
-                ];
-            }
-
-            Log::info('BrowserClick: URL finale dans HTML.', ['final_url' => $finalUrl]);
-
-            return ['success' => true, 'final_url' => $finalUrl, 'final_html' => $html, 'error' => null];
+            return [
+                'success'    => false,
+                'final_url'  => null,
+                'final_html' => $html,
+                'error'      => 'Aucun lien de téléchargement détecté.',
+            ];
 
         } catch (\Throwable $e) {
             Log::error('BrowserClick: erreur fatale.', ['iframe_url' => $iframeUrl, 'error' => $e->getMessage()]);
 
             return ['success' => false, 'final_url' => null, 'final_html' => null, 'error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * Extrait l'URL depuis la balise <video class="jw-video" src="...">.
+     *
+     * vdesk.live inclut directement le tag <video> avec l'URL MP4 finale dans
+     * le HTML de la page embed — pas besoin de simuler des clics JS.
+     */
+    private function extractJwVideoSrc(string $html): ?string
+    {
+        // Recherche rapide : <video ... class="...jw-video..." ... src="URL">
+        // On accepte n'importe quel ordre d'attributs.
+        if (! str_contains($html, 'jw-video')) {
+            return null;
+        }
+
+        // Regex qui trouve une balise <video> contenant la classe "jw-video"
+        // et en extrait l'attribut src, quel que soit l'ordre des attributs.
+        if (preg_match('/<video\b[^>]*\bclass=["\'][^"\']*\bjw-video\b[^"\']*["\'][^>]*\bsrc=["\'](https?:[^"\']+)["\'][^>]*>/i', $html, $m)) {
+            return trim($m[1]) ?: null;
+        }
+
+        // Ordre inversé : src avant class
+        if (preg_match('/<video\b[^>]*\bsrc=["\'](https?:[^"\']+)["\'][^>]*\bclass=["\'][^"\']*\bjw-video\b[^"\']*["\'][^>]*>/i', $html, $m)) {
+            return trim($m[1]) ?: null;
+        }
+
+        // Fallback DOMDocument pour les pages avec attributs sur plusieurs lignes
+        $dom = new \DOMDocument();
+        @$dom->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+        foreach ($dom->getElementsByTagName('video') as $video) {
+            /** @var \DOMElement $video */
+            $class = $video->getAttribute('class');
+            if (str_contains($class, 'jw-video')) {
+                $src = trim($video->getAttribute('src'));
+                if ($src !== '' && filter_var($src, FILTER_VALIDATE_URL)) {
+                    return $src;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Décode le script JWPlayer obfusqué eval(function(p,a,c,k,e,d){...})
+     * et extrait le paramètre "file" (URL MP4).
+     *
+     * Certaines pages vdesk encodent l'URL dans un pack JS au lieu de l'écrire
+     * directement dans le tag <video>.
+     */
+    private function extractJwPlayerScriptUrl(string $html): ?string
+    {
+        // Repère le début du bloc eval(function(p,a,c,k,e,d){
+        $marker = 'eval(function(p,a,c,k,e,d)';
+        $pos = strpos($html, $marker);
+        if ($pos === false) {
+            return null;
+        }
+
+        // Extraire le bloc complet en comptant les parenthèses depuis eval(
+        $evalStart = $pos + 4; // position du '(' après 'eval'
+        $evalBlock = $this->extractBalancedParens($html, $evalStart);
+        if ($evalBlock === null) {
+            return null;
+        }
+
+        // Trouver les args internes : }('packed',RADIX,COUNT,'keys'...)
+        // On cherche la position de }( qui sépare le corps de la fonction des arguments
+        $innerPos = strrpos($evalBlock, '}(');
+        if ($innerPos === false) {
+            return null;
+        }
+        $innerStart = $innerPos + 1; // position du '(' des args internes
+        $innerArgs = $this->extractBalancedParens($evalBlock, $innerStart);
+        if ($innerArgs === null) {
+            return null;
+        }
+
+        // innerArgs = ('packed',36,345,'key1|key2|...'.split('|'))
+        // Extraire : enlever ( au début et ) à la fin
+        $innerContent = substr($innerArgs, 1, -1);
+
+        // Extraire la keys string : dernière chaîne entre quotes
+        // Peut se terminer par .split('|') ou pas
+        $keysStr = null;
+        if (preg_match("/,\s*['\"]([^'\"]*)['\"](?:\s*\.split\s*\([^)]*\))?\s*$/s", $innerContent, $km)) {
+            $keysStr = $km[1];
+        }
+        if ($keysStr === null) {
+            return null;
+        }
+
+        // Extraire radix et count : les 2 nombres avant la keys string
+        // Format: 'packed',RADIX,COUNT,'keys'
+        $keysPos = strrpos($innerContent, $keysStr);
+        $beforeKeys = substr($innerContent, 0, $keysPos);
+        if (! preg_match('/,\s*(\d+)\s*,\s*(\d+)\s*,\s*[\'"]?\s*$/s', $beforeKeys, $nm)) {
+            return null;
+        }
+        $radix = (int) $nm[1];
+        $count = (int) $nm[2];
+
+        // Extraire le packed string : première string entre quotes
+        $beforeNums = substr($beforeKeys, 0, -strlen($nm[0]));
+        if (! preg_match("/^\s*['\"](.+)['\"]\s*$/s", $beforeNums, $pm)) {
+            return null;
+        }
+        $packed = $pm[1];
+        $keys   = explode('|', $keysStr);
+
+        // Décode le packed string : chaque token \bWORD\b est remplacé par keys[base_decode(token)]
+        $decoded = preg_replace_callback(
+            '/\b([0-9a-zA-Z]+)\b/',
+            static function (array $m) use ($keys, $radix): string {
+                $index = base_convert($m[1], $radix, 10);
+
+                return $keys[(int) $index] ?? $m[1];
+            },
+            $packed
+        );
+
+        if ($decoded === null) {
+            return null;
+        }
+
+        // Cherche file:"URL" ou file:'URL' dans le script décodé
+        if (preg_match('/\bfile\s*:\s*["\'](https?:[^"\']+\.(?:mp4|m3u8|mkv|webm|ts)[^"\']*)["\']/', $decoded, $f)) {
+            return trim($f[1]);
+        }
+
+        // Fallback générique sur toute URL vidéo dans le script décodé
+        if (preg_match('/(https?:\/\/[^\s"\'<>]+\.(?:mp4|m3u8|mkv|webm|ts)(?:[?#][^\s"\'<>]*)?)/i', $decoded, $f)) {
+            return trim($f[1]);
+        }
+
+        return null;
     }
 
     /**
@@ -324,7 +522,8 @@ class BrowserClickService
 
         foreach ($crawler->filter('a[href]') as $a) {
             $href = trim($a->getAttribute('href') ?? '');
-            if ($href !== '' && $this->isDownloadUrl($href)) {
+            // Ignore les URLs malformées (ex : vdesk génère parfois "page.html]filename.mp4")
+            if ($href !== '' && ! str_contains($href, ']') && $this->isDownloadUrl($href)) {
                 $abs = $this->toAbsolute($href, $currentUrl);
                 if ($abs !== null) {
                     return $abs;
@@ -358,10 +557,10 @@ class BrowserClickService
     private function urlFromJs(string $text, string $baseUrl): ?string
     {
         $patterns = [
-            '/(https?:\/\/[^\s"\'<>]+\.(?:mp4|m3u8|mkv|avi|mov|webm|ts)(?:[?#][^\s"\'<>]*)?)/i',
+            '/(https?:\/\/[^\s"\'<>\[\]]+\.(?:mp4|m3u8|mkv|avi|mov|webm|ts)(?:[?#][^\s"\'<>\[\]]*)?)/i',
             '/(?:file|url|src|source|video|stream|download)\s*[:=]\s*["\']([^"\']+\.(?:mp4|m3u8|mkv|avi|mov|webm|ts)[^"\']*)["\']["\']?/i',
-            '/(https?:\/\/[^\s"\'<>]*\/(?:download|stream|video)\/[^\s"\'<>]*)/i',
-            '/(https?:\/\/[^\s"\'<>]*[?&](?:token|signature|sig|key)=[^\s"\'<>]+)/i',
+            '/(https?:\/\/[^\s"\'<>\[\]]*\/(?:download|stream|video)\/[^\s"\'<>\[\]]*)/i',
+            '/(https?:\/\/[^\s"\'<>\[\]]*[?&](?:token|signature|sig|key)=[^\s"\'<>\[\]]+)/i',
         ];
 
         foreach ($patterns as $pattern) {
@@ -472,6 +671,57 @@ class BrowserClickService
         $port   = isset($parts['port']) ? ":{$parts['port']}" : '';
 
         return "{$scheme}://{$parts['host']}{$port}{$url}";
+    }
+
+    /**
+     * Extrait le contenu entre parenthèses équilibrées à partir de la position donnée.
+     * $pos doit pointer sur la parenthèse ouvrante '('.
+     */
+    private function extractBalancedParens(string $text, int $pos): ?string
+    {
+        $len   = strlen($text);
+        if ($pos >= $len || $text[$pos] !== '(') {
+            return null;
+        }
+
+        $depth  = 0;
+        $inChar = null; // track si on est dans une string ' ou "
+
+        for ($i = $pos; $i < $len; $i++) {
+            $ch = $text[$i];
+
+            // Gestion des strings (ignore les parens à l'intérieur)
+            if ($inChar !== null) {
+                if ($ch === '\\') {
+                    $i++; // skip escaped char
+
+                    continue;
+                }
+                if ($ch === $inChar) {
+                    $inChar = null;
+                }
+
+                continue;
+            }
+
+            if ($ch === "'" || $ch === '"') {
+                $inChar = $ch;
+
+                continue;
+            }
+
+            if ($ch === '(') {
+                $depth++;
+            } elseif ($ch === ')') {
+                $depth--;
+                if ($depth === 0) {
+                    // Retourne le contenu entre ( et ) inclus
+                    return substr($text, $pos, $i - $pos + 1);
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
