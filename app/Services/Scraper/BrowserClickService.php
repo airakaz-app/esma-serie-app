@@ -83,7 +83,7 @@ class BrowserClickService
                 $retried = false;
 
                 for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-                    $delaySec = ScraperSecurityService::exponentialBackoff($attempt, 5);
+                    $delaySec = ScraperSecurityService::exponentialBackoff($attempt, 3);
                     $reason   = $htmlLen < self::VDESK_MIN_VALID_HTML
                         ? "HTML trop petit ({$htmlLen} o < " . self::VDESK_MIN_VALID_HTML . ' o)'
                         : 'page de blocage détectée';
@@ -156,7 +156,7 @@ class BrowserClickService
             }
 
             // ── Stratégie D : formulaire #downloadbtn (redirect 302 → URL finale) ───────
-            ScraperSecurityService::randomDelay(600, 1500);
+            ScraperSecurityService::randomDelay(200, 500);
 
             $finalUrl = $this->submitFinalStep($html, $currentUrl, 'downloadbtn', $jar);
             if ($finalUrl !== null) {
@@ -519,7 +519,7 @@ class BrowserClickService
 
         try {
             // Délai aléatoire avant la requête (imiter comportement humain)
-            ScraperSecurityService::randomDelay(800, 2000);
+            ScraperSecurityService::randomDelay(200, 500);
 
             // Soumettre SANS suivre les redirects pour capturer Location
             $client = $this->clientNoRedirect($currentUrl, $jar);
@@ -797,7 +797,7 @@ class BrowserClickService
     private function submitStep(array $step, string $referer, CookieJar $jar): \Illuminate\Http\Client\Response
     {
         // Délai aléatoire avant la requête (imiter comportement humain)
-        ScraperSecurityService::randomDelay(600, 1500);
+        ScraperSecurityService::randomDelay(200, 500);
 
         $client = $this->client($referer, $jar);
 

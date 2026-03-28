@@ -119,7 +119,7 @@ class ScrapeEpisodesCommand extends Command
             // vdesk.live bloque les requêtes trop rapprochées et renvoie une page
             // d'erreur (~13 056 o) sans l'URL vidéo.
             if ($episodeIndex > 0) {
-                ScraperSecurityService::randomDelay(1000, 2500);
+                ScraperSecurityService::randomDelay(500, 1200);
             }
             $episodeIndex++;
 
@@ -302,7 +302,7 @@ class ScrapeEpisodesCommand extends Command
             $brokenCount++;
 
             // Petit délai pour ne pas surcharger les CDNs
-            usleep(300_000); // 300ms
+            usleep(150_000); // 150ms
         }
 
         Log::info('🔍 Fin vérification URLs.', [
@@ -840,28 +840,30 @@ class ScrapeEpisodesCommand extends Command
                 'retry_count' => $server->retry_count + 1,
             ]);
         } finally {
-            $freshServer = $server->fresh();
-
+            // Pas de fresh() — $server est déjà à jour après forceFill()->save()
             Log::info('── Fin serveur.', [
                 'server_id'     => $server->id,
                 'host'          => $server->host,
-                'status'        => $freshServer?->status,
-                'final_url'     => $freshServer?->final_url ? mb_substr($freshServer->final_url, 0, 80) . '...' : null,
-                'retry_count'   => $freshServer?->retry_count,
-                'error_message' => $freshServer?->error_message,
+                'status'        => $server->status,
+                'final_url'     => $server->final_url ? mb_substr($server->final_url, 0, 80) . '...' : null,
+                'retry_count'   => $server->retry_count,
+                'error_message' => $server->error_message,
             ]);
         }
     }
 
     private function refreshEpisodeStatus(Episode $episode): void
     {
-        $states = $episode->servers()
-            ->selectRaw('status, count(*) as aggregate')
-            ->groupBy('status')
-            ->pluck('aggregate', 'status');
+        // Une seule requête : on récupère tous les champs nécessaires,
+        // et on calcule les compteurs en PHP — plus de double SELECT.
+        $servers = $episode->servers()
+            ->select('id', 'host', 'status', 'final_url', 'error_message')
+            ->get();
 
-        $totalServers = (int) $states->sum();
-        $doneServers = (int) ($states[EpisodeServer::STATUS_DONE] ?? 0);
+        $states = $servers->countBy('status');
+
+        $totalServers = $servers->count();
+        $doneServers  = (int) ($states[EpisodeServer::STATUS_DONE] ?? 0);
 
         if ($doneServers > 0 && $doneServers === $totalServers) {
             $status = Episode::STATUS_DONE;
@@ -871,11 +873,8 @@ class ScrapeEpisodesCommand extends Command
             $status = Episode::STATUS_IN_PROGRESS;
         }
 
-        // Résumé détaillé par serveur pour cet épisode
-        $serverDetails = $episode->servers()
-            ->select('id', 'host', 'status', 'final_url', 'error_message')
-            ->get()
-            ->map(fn ($s) => [
+        // Résumé détaillé (déjà chargé ci-dessus — pas de requête supplémentaire)
+        $serverDetails = $servers->map(fn ($s) => [
                 'id'     => $s->id,
                 'host'   => $s->host,
                 'status' => $s->status,
