@@ -140,7 +140,7 @@ class EpisodeSyncService
                 'page_url' => (string) $episode['page_url'],
                 'episode_number' => $episode['episode_number'] ?? null,
                 'image_url' => $episode['image_url'] ?? null,
-                'status' => Episode::STATUS_PENDING,
+                'status' => Episode::STATUS_DONE,
                 'is_new' => true,
                 'created_at' => $now,
                 'updated_at' => $now,

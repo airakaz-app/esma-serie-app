@@ -49,6 +49,7 @@ class EpisodeSyncLogicTest extends TestCase
             'series_info_id' => $seriesInfo->id,
             'episode_number' => 10,
             'is_new' => true,
+            'status' => Episode::STATUS_DONE,
         ]);
         $this->assertDatabaseHas('episodes', [
             'series_info_id' => $seriesInfo->id,
