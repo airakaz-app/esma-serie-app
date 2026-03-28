@@ -222,12 +222,16 @@ class SeriesInfoController extends Controller
             ->pluck('episode_number')
             ->filter(fn ($episodeNumber): bool => is_int($episodeNumber))
             ->values();
+        $coverImageUrl = collect($episodes)
+            ->pluck('image_url')
+            ->first(fn ($imageUrl): bool => is_string($imageUrl) && $imageUrl !== '');
 
         return response()->json([
             'episodesTotal' => count($episodes),
             'hasEpisodeNumbers' => $episodeNumbers->isNotEmpty(),
             'episodeMin' => $episodeNumbers->isEmpty() ? null : $episodeNumbers->min(),
             'episodeMax' => $episodeNumbers->isEmpty() ? null : $episodeNumbers->max(),
+            'coverImageUrl' => is_string($coverImageUrl) ? $coverImageUrl : null,
         ]);
     }
 

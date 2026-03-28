@@ -169,6 +169,15 @@
                 <div id="addSeriesError" class="alert alert-danger py-2 px-3 mb-0 d-none"></div>
 
                 <div id="episodePreviewSection" class="d-none border border-secondary rounded p-3">
+                    <div id="episodePreviewCoverWrapper" class="d-none mb-2">
+                        <img
+                            id="episodePreviewCover"
+                            src=""
+                            alt="Couverture de la série"
+                            class="rounded border border-secondary"
+                            style="width: 72px; height: 100px; object-fit: cover;"
+                        >
+                    </div>
                     <p id="episodePreviewSummary" class="mb-2 small"></p>
                     <div id="episodeRangeSection" class="row g-2">
                         <div class="col-12 col-sm-6">
@@ -225,6 +234,8 @@
     const spinnerElement = document.getElementById('addSeriesSpinner');
     const errorElement = document.getElementById('addSeriesError');
     const episodePreviewSection = document.getElementById('episodePreviewSection');
+    const episodePreviewCoverWrapper = document.getElementById('episodePreviewCoverWrapper');
+    const episodePreviewCover = document.getElementById('episodePreviewCover');
     const episodePreviewSummary = document.getElementById('episodePreviewSummary');
     const episodeRangeSection = document.getElementById('episodeRangeSection');
     const episodeStartInput = document.getElementById('episodeStart');
@@ -312,6 +323,8 @@
 
         isPreviewStepCompleted = false;
         episodePreviewSection.classList.add('d-none');
+        episodePreviewCoverWrapper.classList.add('d-none');
+        episodePreviewCover.src = '';
         episodePreviewSummary.textContent = '';
         episodeRangeSection.classList.remove('d-none');
         episodeStartInput.value = '';
@@ -461,6 +474,8 @@
         searchResultsList.innerHTML = '';
         isPreviewStepCompleted = false;
         episodePreviewSection.classList.add('d-none');
+        episodePreviewCoverWrapper.classList.add('d-none');
+        episodePreviewCover.src = '';
         episodePreviewSummary.textContent = '';
         episodeRangeSection.classList.remove('d-none');
         submitButton.textContent = 'Vérifier les épisodes';
@@ -507,12 +522,20 @@
                 const hasEpisodeNumbers = Boolean(responseData.hasEpisodeNumbers);
                 const episodeMin = responseData.episodeMin;
                 const episodeMax = responseData.episodeMax;
+                const coverImageUrl = responseData.coverImageUrl;
 
                 if (episodesTotal === 0) {
                     throw new Error('Aucun épisode trouvé sur cette URL.');
                 }
 
                 episodePreviewSection.classList.remove('d-none');
+                if (typeof coverImageUrl === 'string' && coverImageUrl !== '') {
+                    episodePreviewCover.src = coverImageUrl;
+                    episodePreviewCoverWrapper.classList.remove('d-none');
+                } else {
+                    episodePreviewCover.src = '';
+                    episodePreviewCoverWrapper.classList.add('d-none');
+                }
 
                 if (hasEpisodeNumbers) {
                     episodePreviewSummary.textContent = `Épisodes trouvés: ${episodesTotal}. Plage détectée: ${episodeMin} à ${episodeMax}.`;
