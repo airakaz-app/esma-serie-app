@@ -93,7 +93,7 @@
         <a href="{{ route('series-infos.index') }}" class="text-decoration-none text-info">← Retour aux séries</a>
         <form method="POST" action="{{ route('logout') }}">
             @csrf
-            <button type="submit" class="btn btn-outline-light btn-sm w-100 w-sm-auto">Déconnexion</button>
+            <button type="submit" class="btn btn-outline-light btn-sm w-auto">Déconnexion</button>
         </form>
     </div>
 
@@ -125,7 +125,7 @@
                         <form method="POST" action="{{ route('series-infos.destroy', $seriesInfo) }}" onsubmit="return confirm('Supprimer cette série et tous ses épisodes ?');">
                             @csrf
                             @method('DELETE')
-                            <button type="submit" class="btn btn-outline-danger btn-sm w-100 w-sm-auto">Supprimer la série</button>
+                            <button type="submit" class="btn btn-outline-danger btn-sm w-auto">Supprimer la série</button>
                         </form>
                     </div>
 
@@ -159,7 +159,7 @@
                 type="button"
                 id="refreshEpisodesButton"
                 data-retry-url="{{ route('series-infos.retry-errors', $seriesInfo) }}"
-                class="btn btn-outline-warning btn-sm w-100 w-sm-auto"
+                class="btn btn-outline-warning btn-sm w-auto"
             >
                 Retry erreurs
             </button>
@@ -173,13 +173,13 @@
                     <input class="form-check-input" type="checkbox" id="selectAllEpisodes">
                     <label class="form-check-label" for="selectAllEpisodes">Tout sélectionner</label>
                 </div>
-                <button type="submit" class="btn btn-outline-danger btn-sm w-100 w-sm-auto" id="bulkDeleteEpisodesButton" disabled>
+                <button type="submit" class="btn btn-outline-danger btn-sm w-auto" id="bulkDeleteEpisodesButton" disabled>
                     Supprimer la sélection
                 </button>
-                <button type="button" class="btn btn-outline-success btn-sm hide-download-on-tv w-100 w-sm-auto" id="bulkDownloadEpisodesButton" disabled>
+                <button type="button" class="btn btn-outline-success btn-sm hide-download-on-tv w-auto" id="bulkDownloadEpisodesButton" disabled>
                     Télécharger la sélection
                 </button>
-                <button type="button" class="btn btn-success btn-sm hide-download-on-tv w-100 w-sm-auto" id="downloadSeriesButton">
+                <button type="button" class="btn btn-success btn-sm hide-download-on-tv w-auto" id="downloadSeriesButton">
                     Télécharger toute la série
                 </button>
             </form>
@@ -267,7 +267,7 @@
                                     @if ($playableUrl)
                                         <button
                                             type="button"
-                                            class="btn btn-outline-info btn-sm w-100 w-sm-auto"
+                                            class="btn btn-outline-info btn-sm w-auto"
                                             data-bs-toggle="modal"
                                             data-bs-target="#videoPlayerModal"
                                             data-video-url="{{ $playableUrl }}"
@@ -282,7 +282,7 @@
 
                                         <a
                                             href="{{ route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}"
-                                            class="btn btn-outline-success btn-sm hide-download-on-tv w-100 w-sm-auto"
+                                            class="btn btn-outline-success btn-sm hide-download-on-tv w-auto"
                                         >
                                             Télécharger
                                         </a>
