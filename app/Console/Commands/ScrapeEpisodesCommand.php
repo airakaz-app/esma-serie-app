@@ -326,11 +326,63 @@ class ScrapeEpisodesCommand extends Command
         try {
             $episodes = $this->listScraper->scrape($listUrl);
 
+            $rawStart     = $this->option('episode-start');
+            $rawEnd       = $this->option('episode-end');
+            $episodeStart = ($rawStart !== null && $rawStart !== '') ? (int) $rawStart : null;
+            $episodeEnd   = ($rawEnd !== null && $rawEnd !== '') ? (int) $rawEnd : null;
+
+            // ── 1. Filtrer par plage AVANT toute écriture en base
+            $allEpisodes = $episodes; // Garde tous pour trouver la page série
+            if ($episodeStart !== null || $episodeEnd !== null) {
+                $beforeCount = count($episodes);
+
+                $episodes = array_values(array_filter($episodes, function (array $ep) use ($episodeStart, $episodeEnd): bool {
+                    $num = $ep['episode_number'] ?? null;
+                    if ($num === null) {
+                        return false;
+                    }
+                    if ($episodeStart !== null && $num < $episodeStart) {
+                        return false;
+                    }
+                    if ($episodeEnd !== null && $num > $episodeEnd) {
+                        return false;
+                    }
+                    return true;
+                }));
+
+                Log::info('📋 Filtrage épisodes par plage AVANT insertion.', [
+                    'episode_start' => $episodeStart,
+                    'episode_end'   => $episodeEnd,
+                    'before_count'  => $beforeCount,
+                    'after_count'   => count($episodes),
+                ]);
+
+                $this->info(sprintf('Plage %d-%d : %d épisodes retenus sur %d détectés.',
+                    $episodeStart ?? 1,
+                    $episodeEnd ?? 9999,
+                    count($episodes),
+                    $beforeCount,
+                ));
+
+                if (count($episodes) === 0) {
+                    Log::warning('⚠️ Aucun épisode dans la plage demandée.', [
+                        'episode_start' => $episodeStart,
+                        'episode_end'   => $episodeEnd,
+                        'total_scraped' => $beforeCount,
+                    ]);
+                    $this->warn('Aucun épisode dans la plage demandée. Vérifiez les numéros disponibles.');
+                }
+            }
+
+            // ── 2. Insérer les épisodes filtrés en base
             $this->upsertEpisodes($episodes);
 
-            $this->syncSeriesInfoFromEpisodes($episodes);
+            // ── 3. Sync série APRÈS insertion
+            //   - $allEpisodes[0] sert à trouver la page série (même si ep1 est hors plage)
+            //   - On ne lie que les épisodes réellement insérés ($episodes filtrés)
+            $this->syncSeriesInfoFromEpisodes($allEpisodes, $episodes);
 
-            $this->info(sprintf('Épisodes détectés: %d', count($episodes)));
+            $this->info(sprintf('Épisodes insérés: %d', count($episodes)));
         } catch (\Throwable $e) {
             $this->lastError = $e->getMessage();
 
@@ -397,18 +449,24 @@ class ScrapeEpisodesCommand extends Command
     }
 
     /**
-     * @param array<int, array{title:string,page_url:string,episode_number:?int,image_url:?string}> $episodes
+     * @param array<int, array{title:string,page_url:string,episode_number:?int,image_url:?string}> $allEpisodes
+     *        Tous les épisodes scrapés (sert à trouver la page série même si l'ep 1 est hors plage)
+     * @param array<int, array{title:string,page_url:string,episode_number:?int,image_url:?string}>|null $episodesToLink
+     *        Épisodes à lier à la série en base (null = utiliser $allEpisodes)
      */
-    private function syncSeriesInfoFromEpisodes(array $episodes): void
+    private function syncSeriesInfoFromEpisodes(array $allEpisodes, ?array $episodesToLink = null): void
     {
-        if ($episodes === []) {
+        if ($allEpisodes === []) {
             return;
         }
 
-        $firstEpisodeUrl = (string) ($episodes[0]['page_url'] ?? '');
+        $firstEpisodeUrl = (string) ($allEpisodes[0]['page_url'] ?? '');
         if ($firstEpisodeUrl === '') {
             return;
         }
+
+        // Les épisodes à lier = ceux filtrés si fournis, sinon tous
+        $episodesToLink ??= $allEpisodes;
 
         try {
             $seriesInfo = $this->seriesInfoScraper->scrapeFromEpisodeUrl($firstEpisodeUrl);
@@ -430,7 +488,8 @@ class ScrapeEpisodesCommand extends Command
             $this->trackedSeriesInfoTitle = $seriesInfoModel->title;
             $this->updateTrackingStatus('running', 'Fiche série créée. Récupération des épisodes en cours...');
 
-            $episodeUrls = collect($episodes)
+            // Lier seulement les épisodes insérés (filtrés) à la série
+            $episodeUrls = collect($episodesToLink)
                 ->pluck('page_url')
                 ->filter(fn (?string $pageUrl): bool => $pageUrl !== null && $pageUrl !== '')
                 ->values();
