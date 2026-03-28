@@ -93,9 +93,31 @@
             padding: 0.55rem 0.7rem;
         }
 
+        .episode-select-row {
+            min-height: 2rem;
+        }
+
+        .episode-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            width: 100%;
+        }
+
+        .episode-actions > .btn,
+        .episode-actions > form {
+            flex: 1 1 0;
+            min-width: 8.25rem;
+        }
+
+        .episode-actions > form .btn {
+            width: 100%;
+        }
+
         .episode-actions .btn {
             border-radius: 0.55rem;
             font-weight: 500;
+            padding-inline: 0.75rem;
         }
 
         .episode-title {
@@ -150,10 +172,6 @@
                 line-height: 1.25rem;
             }
 
-            .episode-card .episode-actions {
-                gap: 0.4rem;
-            }
-
             .episode-card .episode-actions .btn {
                 font-size: 0.8rem;
                 line-height: 1.15;
@@ -167,13 +185,11 @@
         }
 
         @media (max-width: 767.98px) {
-            .episode-card .episode-actions {
-                width: 100%;
-            }
-
             .episode-card .episode-actions > .btn,
             .episode-card .episode-actions > form {
                 width: 100%;
+                min-width: 0;
+                flex: 1 1 100%;
             }
 
             .episode-card .episode-actions > form .btn {
@@ -360,22 +376,27 @@
                         </div>
 
                         <div class="card-body">
-                            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start gap-2 episode-top-row">
-                                <div class="form-check">
-                                    <input
-                                        class="form-check-input episode-checkbox"
-                                        type="checkbox"
-                                        name="episode_ids[]"
-                                        value="{{ $episode->id }}"
-                                        form="bulkDeleteEpisodesForm"
-                                        id="episode-{{ $episode->id }}"
-                                        data-episode-title="{{ $episode->title }}"
-                                        data-download-url="{{ $playableUrl ? route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) : '' }}"
-                                    >
-                                    <label class="form-check-label small text-secondary episode-select-label" for="episode-{{ $episode->id }}">Sélectionner</label>
+                            <div class="episode-top-row">
+                                <div class="d-flex align-items-center justify-content-between gap-2 mb-2 episode-select-row">
+                                    <div class="form-check mb-0">
+                                        <input
+                                            class="form-check-input episode-checkbox"
+                                            type="checkbox"
+                                            name="episode_ids[]"
+                                            value="{{ $episode->id }}"
+                                            form="bulkDeleteEpisodesForm"
+                                            id="episode-{{ $episode->id }}"
+                                            data-episode-title="{{ $episode->title }}"
+                                            data-download-url="{{ $playableUrl ? route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) : '' }}"
+                                        >
+                                        <label class="form-check-label small text-secondary episode-select-label" for="episode-{{ $episode->id }}">Sélectionner</label>
+                                    </div>
+                                    @if ($episodeCompleted)
+                                        <span class="badge text-bg-success">Terminé</span>
+                                    @endif
                                 </div>
 
-                                <div class="d-flex flex-wrap justify-content-end episode-actions">
+                                <div class="episode-actions">
                                     @if ($playableUrl)
                                         <button
                                             type="button"
@@ -410,9 +431,6 @@
 
                             <div class="d-flex align-items-center gap-2">
                                 <h3 class="h6 card-title mb-0 episode-title">{{ $episode->title }}</h3>
-                                @if ($episodeCompleted)
-                                    <span class="badge text-bg-success">Terminé</span>
-                                @endif
                             </div>
                             <p class="mb-0 episode-card-status {{ $playableUrl ? 'text-info' : 'text-secondary' }}">
                                 @if ($playableUrl)
