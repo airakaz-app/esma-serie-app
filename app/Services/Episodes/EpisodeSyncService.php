@@ -2,6 +2,7 @@
 
 namespace App\Services\Episodes;
 
+use App\Jobs\RunScrapeEpisodesJob;
 use App\Models\Episode;
 use App\Models\SeriesInfo;
 use App\Services\Scraper\EpisodeListScraper;
@@ -92,14 +93,14 @@ class EpisodeSyncService
             return 0;
         }
 
-        $existingEpisodesCount = Episode::query()
+        // Une seule requête pour count + max(episode_number) ; une autre pour les URLs connues.
+        $stats = Episode::query()
             ->where('series_info_id', $seriesInfo->id)
-            ->count();
+            ->selectRaw('COUNT(*) as total, MAX(episode_number) as max_number')
+            ->first();
 
-        $latestStoredEpisodeNumberRaw = Episode::query()
-            ->where('series_info_id', $seriesInfo->id)
-            ->max('episode_number');
-        $latestStoredEpisodeNumber = $latestStoredEpisodeNumberRaw !== null ? (int) $latestStoredEpisodeNumberRaw : null;
+        $existingEpisodesCount    = (int) ($stats->total ?? 0);
+        $latestStoredEpisodeNumber = $stats->max_number !== null ? (int) $stats->max_number : null;
 
         $alreadyKnownUrls = Episode::query()
             ->where('series_info_id', $seriesInfo->id)
@@ -148,13 +149,37 @@ class EpisodeSyncService
                 'page_url' => (string) $episode['page_url'],
                 'episode_number' => $episode['episode_number'] ?? null,
                 'image_url' => $episode['image_url'] ?? null,
-                'status' => Episode::STATUS_DONE,
+                // STATUS_PENDING : l'épisode est découvert mais l'URL vidéo n'est pas encore
+                // résolue. Le ScrapeEpisodesCommand le traitera lors du prochain scrape ou
+                // via le bouton "Retry erreurs". Utiliser STATUS_DONE ici causait "Lien final
+                // indisponible" car episodeQuery() exclut les épisodes done sans final_url.
+                'status' => Episode::STATUS_PENDING,
                 'is_new' => $shouldTagAsNew,
                 'created_at' => $now,
                 'updated_at' => $now,
             ])
             ->all();
 
-        return Episode::query()->insertOrIgnore($insertPayload);
+        $insertedCount = Episode::query()->insertOrIgnore($insertPayload);
+
+        // ── Après insertion des nouveaux épisodes, dispatcher un job pour les scraper ──
+        // Cela transforme les épisodes en pending (juste découverts) en épisodes done
+        // (avec final_url). Sans cela, les épisodes resteraient "Récupération en cours..."
+        // indéfiniment jusqu'à ce que l'utilisateur lance manuellement un scrape.
+        if ($insertedCount > 0) {
+            RunScrapeEpisodesJob::dispatch(
+                '',                           // listPageUrl (vide : mode retry-only)
+                '',                           // trackingKey (vide : pas de suivi UI)
+                false,                        // retryErrors
+                $seriesInfo->id               // seriesInfoId (scrape cette série uniquement)
+            );
+
+            Log::info('📤 Job de scraping dispatché après sync.', [
+                'series_info_id' => $seriesInfo->id,
+                'new_episodes_count' => $insertedCount,
+            ]);
+        }
+
+        return $insertedCount;
     }
 }

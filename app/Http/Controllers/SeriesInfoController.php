@@ -276,6 +276,10 @@ class SeriesInfoController extends Controller
 
     public function refreshAllEpisodes(EpisodeSyncService $episodeSyncService): JsonResponse
     {
+        // Désactiver le timeout PHP pour cette requête : le scraping de toutes les séries
+        // peut prendre plusieurs minutes selon le nombre de séries et la latence réseau.
+        set_time_limit(0);
+
         $result = $episodeSyncService->syncAllSeries('manual');
 
         return response()->json($result, $result['status'] === 'error' ? 500 : 200);

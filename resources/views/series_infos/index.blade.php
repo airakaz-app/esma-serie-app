@@ -293,8 +293,19 @@
                 return;
             }
 
-            if (Number(data.new_episodes_count ?? 0) > 0) {
-                setRefreshFeedback(`✅ ${data.new_episodes_count} nouveau(x) épisode(s) importé(s).`, 'success');
+            const newCount = Number(data.new_episodes_count ?? 0);
+            const hasErrors = Array.isArray(data.errors) && data.errors.length > 0;
+
+            if (data.status === 'completed_with_errors') {
+                // Succès partiel : on affiche les épisodes importés + la liste des erreurs
+                const errorSummary = data.errors.slice(0, 3).join(' | ');
+                const moreSuffix = data.errors.length > 3 ? ` (+${data.errors.length - 3} autre(s))` : '';
+                const msg = newCount > 0
+                    ? `⚠️ ${newCount} épisode(s) importé(s) mais avec erreurs : ${errorSummary}${moreSuffix}`
+                    : `⚠️ Synchronisation terminée avec erreurs : ${errorSummary}${moreSuffix}`;
+                setRefreshFeedback(msg, 'warning');
+            } else if (newCount > 0) {
+                setRefreshFeedback(`✅ ${newCount} nouveau(x) épisode(s) importé(s).`, 'success');
             } else {
                 setRefreshFeedback('Aucun nouvel épisode trouvé.', 'info');
             }
