@@ -37,18 +37,18 @@ class GlobalEpisodeRetryService
         try {
             Log::info('🔄 Démarrage du retry global pour tous les épisodes en erreur.');
 
-            // Récupérer toutes les séries
+            // Récupérer toutes les séries (sans eager load des épisodes)
             $seriesInfos = SeriesInfo::query()
-                ->with('episodes')
                 ->orderBy('id')
-                ->get();
+                ->get(['id', 'title']);
 
             $seriesTotal = $seriesInfos->count();
 
             foreach ($seriesInfos as $seriesInfo) {
                 try {
-                    // Vérifier si cette série a des épisodes problématiques
-                    $problematicEpisodes = $seriesInfo->episodes
+                    // Vérifier si cette série a des épisodes problématiques via requête (pas N+1)
+                    $problematicEpisodes = Episode::query()
+                        ->where('series_info_id', $seriesInfo->id)
                         ->whereIn('status', [
                             Episode::STATUS_PENDING,
                             Episode::STATUS_IN_PROGRESS,

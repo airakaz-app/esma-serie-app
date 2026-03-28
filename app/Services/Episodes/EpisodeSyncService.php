@@ -171,6 +171,12 @@ class EpisodeSyncService
 
         $insertedCount = Episode::query()->insertOrIgnore($insertPayload);
 
+        // Invalider le cache si des épisodes ont été insérés
+        if ($insertedCount > 0) {
+            Cache::forget('series-infos-list');
+            Cache::forget('series-show:' . $seriesInfo->id);
+        }
+
         // ── Après insertion des nouveaux épisodes, dispatcher un job pour les scraper ──
         // Cela transforme les épisodes en pending (juste découverts) en épisodes done
         // (avec final_url). Sans cela, les épisodes resteraient "Récupération en cours..."

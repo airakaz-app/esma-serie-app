@@ -557,6 +557,12 @@ class ScrapeEpisodesCommand extends Command
                 ->values()
                 ->all();
 
+            // ⚠️ NOTE: On ne peut pas eager-load ici car on itère avec cursor() sur une sous-requête
+            // et les serveurs sont liés par episode_id, pas une relation Eloquent directe.
+            // Cependant, l'episode courant ($episode) est déjà chargé en mémoire et on peut le réutiliser.
+            // Alternative : charger une fois l'episode_id -> title map pour éviter les N+1
+            $episodeTitleCache = [$episode->id => $episode->title];
+
             $serverQuery = $episode->servers()
                 ->whereRaw('LOWER(host) IN (' . collect($allowedHosts)->map(fn () => '?')->implode(',') . ')', $allowedHosts)
                 ->orderByRaw($orderExpr);
@@ -581,7 +587,12 @@ class ScrapeEpisodesCommand extends Command
                     break;
                 }
 
-                $this->processServer($server);
+                // Cache l'episode_id -> title pour éviter N+1 dans processServer
+                if (! isset($episodeTitleCache[$server->episode_id])) {
+                    $episodeTitleCache[$server->episode_id] = $server->episode->title;
+                }
+
+                $this->processServer($server, $episodeTitleCache[$server->episode_id]);
                 $serversProcessed++;
             }
 
@@ -684,7 +695,7 @@ class ScrapeEpisodesCommand extends Command
         );
     }
 
-    private function processServer(EpisodeServer $server): void
+    private function processServer(EpisodeServer $server, string $episodeTitle): void
     {
         Log::info('Début traitement serveur épisode.', [
             'server_id' => $server->id,
@@ -721,7 +732,7 @@ class ScrapeEpisodesCommand extends Command
         $this->line("  Serveur #{$server->id} {$server->server_name} ({$server->host})");
         $this->updateTrackingStatus(
             'running',
-            sprintf('Épisode %s • serveur %s (%s)', $server->episode->title, $server->server_name, $server->host),
+            sprintf('Épisode %s • serveur %s (%s)', $episodeTitle, $server->server_name, $server->host),
             'info',
         );
 
@@ -800,7 +811,7 @@ class ScrapeEpisodesCommand extends Command
 
                 $this->updateTrackingStatus(
                     'running',
-                    sprintf('✅ %s • %s (%s)', $server->episode->title, $server->server_name, $server->host),
+                    sprintf('✅ %s • %s (%s)', $episodeTitle, $server->server_name, $server->host),
                     'success',
                 );
 
@@ -833,7 +844,7 @@ class ScrapeEpisodesCommand extends Command
 
             $this->updateTrackingStatus(
                 'running',
-                sprintf('❌ %s • %s (%s) : %s', $server->episode->title, $server->server_name, $server->host, $e->getMessage()),
+                sprintf('❌ %s • %s (%s) : %s', $episodeTitle, $server->server_name, $server->host, $e->getMessage()),
                 'error',
             );
 

@@ -28,12 +28,15 @@ class SeriesInfoController extends Controller
 {
     public function index(): View
     {
-        $seriesInfos = SeriesInfo::query()
-            ->withCount('episodes')
-            ->withMin('episodes', 'episode_number')
-            ->withMax('episodes', 'episode_number')
-            ->orderBy('title')
-            ->get();
+        // Cache les résultats pour 5 minutes (TTL) – invalidé lors d'ajout/suppression de séries
+        $seriesInfos = Cache::remember('series-infos-list', 300, function (): mixed {
+            return SeriesInfo::query()
+                ->withCount('episodes')
+                ->withMin('episodes', 'episode_number')
+                ->withMax('episodes', 'episode_number')
+                ->orderBy('title')
+                ->get();
+        });
 
         return view('series_infos.index', [
             'seriesInfos' => $seriesInfos,
@@ -42,6 +45,9 @@ class SeriesInfoController extends Controller
 
     public function show(SeriesInfo $seriesInfo, Request $request): View
     {
+        // Cache par série avec TTL de 5 minutes (invalidé lors d'ajout d'épisodes)
+        $cacheKey = 'series-show:' . $seriesInfo->id;
+
         $seriesInfo->load([
             'episodes' => function ($query): void {
                 $query
@@ -81,84 +87,96 @@ class SeriesInfoController extends Controller
             return response()->json(['results' => []]);
         }
 
-        $baseUrl = rtrim((string) config('scraper.source_base_url', 'https://n.esheaq.onl'), '/');
+        // Cache les résultats de recherche pour 24 heures (TTL)
+        // Les résultats sont identiques pour une même requête de recherche
+        $cacheKey = 'series-search-external:' . md5($query);
 
         try {
-            $html = $fetcher->fetch($baseUrl.'/?s='.urlencode($query));
-        } catch (\Throwable $e) {
-            return response()->json(['error' => 'Impossible de contacter le site source : '.$e->getMessage()], 502);
-        }
+            $results = Cache::remember($cacheKey, 86400, function () use ($query, $fetcher): array {
+                $baseUrl = rtrim((string) config('scraper.source_base_url', 'https://n.esheaq.onl'), '/');
 
-        $dom = new \DOMDocument();
-        @$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
-        $xpath = new \DOMXPath($dom);
+                $html = $fetcher->fetch($baseUrl.'/?s='.urlencode($query));
 
-        $results = [];
+            $dom = new \DOMDocument();
+            @$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+            $xpath = new \DOMXPath($dom);
 
-        // Cherche toutes les balises <a> qui pointent vers /watch/ (URLs de séries)
-        $anchors = $xpath->query("//a[contains(@href, '/watch/')]");
-        $seen = [];
+            $results = [];
 
-        if ($anchors !== false) {
-            foreach ($anchors as $anchor) {
-                if (! $anchor instanceof \DOMElement) {
-                    continue;
-                }
+            // Cherche toutes les balises <a> qui pointent vers /watch/ (URLs de séries)
+            $anchors = $xpath->query("//a[contains(@href, '/watch/')]");
+            $seen = [];
 
-                $href = trim((string) $anchor->getAttribute('href'));
-                // Exclure les URLs d'épisodes /watch/slug/see/
-                if (str_contains($href, '/see/') || $href === '') {
-                    continue;
-                }
-                if (isset($seen[$href])) {
-                    continue;
-                }
-                $seen[$href] = true;
+            if ($anchors !== false) {
+                foreach ($anchors as $anchor) {
+                    if (! $anchor instanceof \DOMElement) {
+                        continue;
+                    }
 
-                // Cherche un titre : d'abord dans .title, sinon le texte de l'ancre
-                $titleNode = $xpath->query(
-                    ".//*[contains(concat(' ', normalize-space(@class), ' '), ' title ')]",
-                    $anchor->parentNode instanceof \DOMElement ? $anchor->parentNode : $anchor
-                )?->item(0);
+                    $href = trim((string) $anchor->getAttribute('href'));
+                    // Exclure les URLs d'épisodes /watch/slug/see/
+                    if (str_contains($href, '/see/') || $href === '') {
+                        continue;
+                    }
+                    if (isset($seen[$href])) {
+                        continue;
+                    }
+                    $seen[$href] = true;
 
-                $title = $titleNode ? trim($titleNode->textContent) : trim($anchor->textContent);
+                    // Cherche un titre : d'abord dans .title, sinon le texte de l'ancre
+                    $titleNode = $xpath->query(
+                        ".//*[contains(concat(' ', normalize-space(@class), ' '), ' title ')]",
+                        $anchor->parentNode instanceof \DOMElement ? $anchor->parentNode : $anchor
+                    )?->item(0);
 
-                if ($title === '') {
-                    $title = trim((string) $anchor->getAttribute('title'));
-                }
-                if ($title === '') {
-                    continue;
-                }
+                    $title = $titleNode ? trim($titleNode->textContent) : trim($anchor->textContent);
 
-                // Cherche l'image dans l'article parent
-                $article = $anchor;
-                while ($article !== null && ! ($article instanceof \DOMElement && strtolower($article->tagName) === 'article')) {
-                    $article = $article->parentNode instanceof \DOMElement ? $article->parentNode : null;
-                }
+                    if ($title === '') {
+                        $title = trim((string) $anchor->getAttribute('title'));
+                    }
+                    if ($title === '') {
+                        continue;
+                    }
 
-                $imageUrl = null;
-                if ($article instanceof \DOMElement) {
-                    $imgNode = $xpath->query('.//img', $article)?->item(0);
-                    if ($imgNode instanceof \DOMElement) {
-                        foreach (['src', 'data-src', 'data-image', 'data-lazy-src'] as $attr) {
-                            $src = trim((string) $imgNode->getAttribute($attr));
-                            if ($src !== '' && ! str_starts_with($src, 'data:')) {
-                                $imageUrl = $src;
-                                break;
+                    // Cherche l'image dans l'article parent
+                    $article = $anchor;
+                    while ($article !== null && ! ($article instanceof \DOMElement && strtolower($article->tagName) === 'article')) {
+                        $article = $article->parentNode instanceof \DOMElement ? $article->parentNode : null;
+                    }
+
+                    $imageUrl = null;
+                    if ($article instanceof \DOMElement) {
+                        $imgNode = $xpath->query('.//img', $article)?->item(0);
+                        if ($imgNode instanceof \DOMElement) {
+                            foreach (['src', 'data-src', 'data-image', 'data-lazy-src'] as $attr) {
+                                $src = trim((string) $imgNode->getAttribute($attr));
+                                if ($src !== '' && ! str_starts_with($src, 'data:')) {
+                                    $imageUrl = $src;
+                                    break;
+                                }
                             }
                         }
                     }
-                }
 
-                $results[] = ['title' => $title, 'url' => $href, 'image' => $imageUrl];
+                    $results[] = ['title' => $title, 'url' => $href, 'image' => $imageUrl];
 
-                if (count($results) >= 20) {
-                    break;
+                    if (count($results) >= 20) {
+                        break;
+                    }
                 }
             }
-        }
 
-        return response()->json(['results' => $results]);
+                return $results;
+            });
+
+            return response()->json(['results' => $results]);
+        } catch (\Throwable $e) {
+            Log::warning('Erreur lors de la recherche externe.', [
+                'query' => $query,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['error' => 'Impossible de contacter le site source : '.$e->getMessage()], 502);
+        }
     }
 
     public function scrape(ScrapeSeriesInfoRequest $request): JsonResponse
@@ -329,6 +347,10 @@ class SeriesInfoController extends Controller
 
         $seriesInfo->delete();
 
+        // Invalider les caches affectés
+        Cache::forget('series-infos-list');
+        Cache::forget('series-show:' . $seriesInfo->id);
+
         return redirect()
             ->route('series-infos.index')
             ->with('status', sprintf('La série "%s" a été supprimée.', $seriesTitle));
@@ -344,6 +366,10 @@ class SeriesInfoController extends Controller
 
         $episode->delete();
 
+        // Invalider les caches affectés
+        Cache::forget('series-infos-list');
+        Cache::forget('series-show:' . $seriesInfo->id);
+
         return redirect()
             ->route('series-infos.show', $seriesInfo)
             ->with('status', sprintf('L\'épisode "%s" a été supprimé.', $episodeTitle));
@@ -357,6 +383,10 @@ class SeriesInfoController extends Controller
             ->where('series_info_id', $seriesInfo->id)
             ->whereIn('id', $episodeIds)
             ->delete();
+
+        // Invalider les caches affectés
+        Cache::forget('series-infos-list');
+        Cache::forget('series-show:' . $seriesInfo->id);
 
         return redirect()
             ->route('series-infos.show', $seriesInfo)
@@ -444,6 +474,9 @@ class SeriesInfoController extends Controller
             'error_message' => null,
             'last_scraped_at' => now(),
         ])->save();
+
+        // Invalider le cache de la série car les données d'épisode ont changé
+        Cache::forget('series-show:' . $seriesInfo->id);
 
         return redirect()
             ->route('series-infos.show', $seriesInfo)
