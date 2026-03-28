@@ -335,8 +335,8 @@ class ScrapeEpisodesCommand extends Command
 
             $this->upsertEpisodeServers($episode, $servers);
 
-            // Ordonner par priorité d'hôte (vidspeed > vidoba > vdesk)
-            $hostPriority = config('scraper.host_priority', ['vidspeed', 'vidoba', 'vdesk']);
+            // Ordonner par priorité d'hôte (vdesk en premier, puis vidspeed, vidoba)
+            $hostPriority = config('scraper.host_priority', ['vdesk', 'vidspeed', 'vidoba']);
             $orderCase = collect($hostPriority)
                 ->map(fn (string $h, int $i): string => "WHEN LOWER(host) = '" . addslashes(mb_strtolower($h)) . "' THEN {$i}")
                 ->implode(' ');
@@ -516,38 +516,46 @@ class ScrapeEpisodesCommand extends Command
 
         try {
             if (! $server->iframe_url) {
-                Log::info('Extraction iframe_url depuis server_page_url.', [
-                    'server_id' => $server->id,
+                Log::info('⏳ Extraction iframe_url (fallback via server_page_url).', [
+                    'server_id'      => $server->id,
+                    'host'           => $server->host,
                     'server_page_url' => $server->server_page_url,
                 ]);
 
                 $server->iframe_url = $this->pageScraper->extractIframeUrl($server->server_page_url, $server->host ?? '');
                 $server->save();
 
-                Log::info('Résultat extraction iframe_url.', [
-                    'server_id' => $server->id,
+                Log::info($server->iframe_url ? '✅ iframe_url extraite.' : '❌ iframe_url introuvable.', [
+                    'server_id'  => $server->id,
+                    'iframe_url' => $server->iframe_url,
+                ]);
+            } else {
+                Log::info('✅ iframe_url déjà présente (extraite du <noscript>).', [
+                    'server_id'  => $server->id,
                     'iframe_url' => $server->iframe_url,
                 ]);
             }
 
             if (! $server->iframe_url) {
-                throw new \RuntimeException('Iframe introuvable');
+                throw new \RuntimeException('Iframe introuvable pour serveur ' . $server->host);
             }
 
             if (! $server->final_url) {
-                Log::info('Résolution URL finale via BrowserClickService.', [
-                    'server_id' => $server->id,
+                Log::info('⏳ Résolution URL finale via BrowserClickService.', [
+                    'server_id'  => $server->id,
+                    'host'       => $server->host,
                     'iframe_url' => $server->iframe_url,
                 ]);
 
                 $browserResult = $this->browser->resolveDownloadUrl($server->iframe_url, $server->server_page_url);
 
                 Log::info('Résultat BrowserClickService.', [
-                    'server_id' => $server->id,
-                    'success' => $browserResult['success'],
-                    'final_url' => $browserResult['final_url'] ?? null,
+                    'server_id'        => $server->id,
+                    'host'             => $server->host,
+                    'success'          => $browserResult['success'],
+                    'final_url'        => $browserResult['final_url'] ?? null,
                     'final_html_length' => mb_strlen((string) ($browserResult['final_html'] ?? '')),
-                    'error' => $browserResult['error'] ?? null,
+                    'error'            => $browserResult['error'] ?? null,
                 ]);
 
                 if (! $browserResult['success']) {
@@ -555,44 +563,30 @@ class ScrapeEpisodesCommand extends Command
                 }
 
                 $finalHtml = (string) ($browserResult['final_html'] ?? '');
-
-                Log::info('Préparation résumé HTML.', [
-                    'server_id' => $server->id,
-                    'final_html_length' => mb_strlen($finalHtml),
-                    'final_url' => $browserResult['final_url'] ?? null,
-                ]);
-
-                $summary = $this->browser->summarizeHtml($finalHtml);
-
-                Log::info('Résumé HTML produit.', [
-                    'server_id' => $server->id,
-                    'result_title' => $summary['result_title'],
-                    'result_h1' => $summary['result_h1'],
-                    'result_preview_length' => mb_strlen((string) $summary['result_preview']),
-                ]);
+                $summary   = $this->browser->summarizeHtml($finalHtml);
 
                 $server->forceFill([
                     'click_success' => true,
-                    'final_url' => $browserResult['final_url'],
-                    'result_title' => $summary['result_title'],
-                    'result_h1' => $summary['result_h1'],
+                    'final_url'     => $browserResult['final_url'],
+                    'result_title'  => $summary['result_title'],
+                    'result_h1'     => $summary['result_h1'],
                     'result_preview' => $summary['result_preview'],
-                    'status' => EpisodeServer::STATUS_DONE,
+                    'status'        => EpisodeServer::STATUS_DONE,
                     'error_message' => null,
                     'last_scraped_at' => now(),
                 ])->save();
 
                 $this->updateTrackingStatus(
                     'running',
-                    sprintf('Lien final trouvé pour %s (%s)', $server->episode->title, $server->server_name),
+                    sprintf('✅ %s • %s (%s)', $server->episode->title, $server->server_name, $server->host),
                     'success',
                 );
 
-                Log::info('Serveur traité avec succès.', [
-                    'server_id' => $server->id,
-                    'status' => EpisodeServer::STATUS_DONE,
-                    'final_url' => $server->final_url,
-                    'result_title' => $server->result_title,
+                Log::info('✅ Serveur traité avec succès.', [
+                    'server_id'  => $server->id,
+                    'host'       => $server->host,
+                    'status'     => EpisodeServer::STATUS_DONE,
+                    'final_url'  => $server->final_url,
                 ]);
             } else {
                 $server->forceFill([
@@ -617,22 +611,26 @@ class ScrapeEpisodesCommand extends Command
 
             $this->updateTrackingStatus(
                 'running',
-                sprintf('Erreur serveur %s (%s) : %s', $server->server_name, $server->episode->title, $e->getMessage()),
+                sprintf('❌ %s • %s (%s) : %s', $server->episode->title, $server->server_name, $server->host, $e->getMessage()),
                 'error',
             );
 
-            Log::error('Erreur traitement serveur', [
-                'server_id' => $server->id,
-                'error' => $e->getMessage(),
-                'trace_preview' => mb_substr($e->getTraceAsString(), 0, 1200),
+            Log::error('❌ Erreur traitement serveur.', [
+                'server_id'   => $server->id,
+                'host'        => $server->host,
+                'iframe_url'  => $server->iframe_url,
+                'error'       => $e->getMessage(),
+                'retry_count' => $server->retry_count + 1,
             ]);
         } finally {
             $freshServer = $server->fresh();
 
-            Log::info('Fin traitement serveur épisode.', [
-                'server_id' => $server->id,
-                'status' => $freshServer?->status,
-                'retry_count' => $freshServer?->retry_count,
+            Log::info('── Fin serveur.', [
+                'server_id'     => $server->id,
+                'host'          => $server->host,
+                'status'        => $freshServer?->status,
+                'final_url'     => $freshServer?->final_url ? mb_substr($freshServer->final_url, 0, 80) . '...' : null,
+                'retry_count'   => $freshServer?->retry_count,
                 'error_message' => $freshServer?->error_message,
             ]);
         }
@@ -656,12 +654,27 @@ class ScrapeEpisodesCommand extends Command
             $status = Episode::STATUS_IN_PROGRESS;
         }
 
-        Log::info('Calcul statut épisode.', [
-            'episode_id' => $episode->id,
-            'states' => $states->toArray(),
-            'total_servers' => $totalServers,
-            'done_servers' => $doneServers,
-            'selected_status' => $status,
+        // Résumé détaillé par serveur pour cet épisode
+        $serverDetails = $episode->servers()
+            ->select('id', 'host', 'status', 'final_url', 'error_message')
+            ->get()
+            ->map(fn ($s) => [
+                'id'     => $s->id,
+                'host'   => $s->host,
+                'status' => $s->status,
+                'url_ok' => $s->final_url ? '✅' : '❌',
+                'error'  => $s->error_message ? mb_substr($s->error_message, 0, 60) : null,
+            ])
+            ->toArray();
+
+        $emoji = $status === Episode::STATUS_DONE ? '✅' : ($status === Episode::STATUS_ERROR ? '❌' : '⏳');
+        Log::info("{$emoji} Résumé épisode #{$episode->id}.", [
+            'episode_id'     => $episode->id,
+            'episode_title'  => $episode->title,
+            'final_status'   => $status,
+            'done_servers'   => $doneServers,
+            'total_servers'  => $totalServers,
+            'servers_detail' => $serverDetails,
         ]);
 
         $episode->forceFill([

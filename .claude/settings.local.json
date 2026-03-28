@@ -7,7 +7,9 @@
       "Bash(curl -s -L -k --max-time 15 -H \"User-Agent: Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/124.0.0.0 Safari/537.36\" -H 'Accept: text/html' -H \"Accept-Language: ar,fr-FR;q=0.9\" --compressed https://n.esheaq.onl/watch/eedxmm4fvg/see/)",
       "Bash(curl -s -L -k --max-time 15 -H \"User-Agent: Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" -H 'Referer: https://n.esheaq.onl/' --compressed https://vidspeed.org/embed-ndl4ctsp5fbx.html)",
       "Bash(php artisan tinker --execute=\":*)",
-      "Bash(php artisan:*)"
+      "Bash(php artisan:*)",
+      "Bash(curl -s -o /dev/null -w \"vdesk: HTTP %{http_code}, Content-Type: %{content_type}, Size: %{size_download}\\\\n\" -L -k --max-time 10 -H \"User-Agent: Mozilla/5.0\" -H \"Referer: https://vdesk.live/\" -r 0-0 \"https://s3.vdesk.live:8080/files/0/n869vrgskecgz0/video.mp4\")",
+      "Bash(__NEW_LINE_b13aaee3c2f7e25e__ curl:*)"
     ]
   }
 }
