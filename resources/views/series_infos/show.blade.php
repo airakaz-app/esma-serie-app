@@ -327,16 +327,19 @@
     <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-lg-down">
         <div class="modal-content bg-dark text-light border border-secondary-subtle">
             <div class="modal-header">
-                <h5 class="modal-title" id="videoPlayerModalLabel">Lecture vidéo</h5>
-                <p class="small mb-0 mt-1 me-auto pe-3 text-break d-none" id="videoPlayerUrlWrapper">
-                    <a
-                        id="videoPlayerUrlLink"
-                        href="#"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="link-info text-decoration-underline"
-                    ></a>
-                </p>
+                <div class="d-flex flex-column me-auto pe-3">
+                    <h5 class="modal-title mb-0" id="videoPlayerModalLabel">Lecture vidéo</h5>
+                    <p class="mb-0 mt-1 text-break d-none" id="videoPlayerUrlWrapper">
+                        <a
+                            id="videoPlayerUrlLink"
+                            href="#"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="link-info text-decoration-underline"
+                            style="font-size: 0.68rem;"
+                        ></a>
+                    </p>
+                </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
             </div>
             <div class="modal-body p-2 p-md-3 gap-2">
