@@ -28,14 +28,14 @@ return [
     | Hôtes de serveurs autorisés
     |--------------------------------------------------------------------------
     */
-    'allowed_hosts' => array_filter(array_map('trim', explode(',', (string) env('SCRAPER_ALLOWED_HOSTS', 'vidspeed,vidoba,vdesk')))),
+    'allowed_hosts' => array_filter(array_map('trim', explode(',', (string) env('SCRAPER_ALLOWED_HOSTS', 'vdesk')))),
 
     /*
     |--------------------------------------------------------------------------
     | Priorité des hôtes (ordre de tentative : le premier est essayé en premier)
     |--------------------------------------------------------------------------
     */
-    'host_priority' => array_filter(array_map('trim', explode(',', (string) env('SCRAPER_HOST_PRIORITY', 'vidspeed,vidoba,vdesk')))),
+    'host_priority' => array_filter(array_map('trim', explode(',', (string) env('SCRAPER_HOST_PRIORITY', 'vdesk')))),
 
 
 ];

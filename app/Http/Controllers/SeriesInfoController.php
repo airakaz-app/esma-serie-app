@@ -246,7 +246,7 @@ class SeriesInfoController extends Controller
 
         Cache::put($this->trackingCacheKey($trackingKey), [
             'state'               => 'running',
-            'message'             => 'Retry en file. En attente du worker...',
+            'message'             => 'Retry en file. Vérification des URLs et relance...',
             'episodesTotal'       => 0,
             'episodesProcessed'   => 0,
             'progressPercent'     => 0,
@@ -258,7 +258,7 @@ class SeriesInfoController extends Controller
             'events'              => [[
                 'time'    => now()->format('H:i:s'),
                 'level'   => 'info',
-                'message' => 'Retry des épisodes en erreur initialisé.',
+                'message' => 'Retry initialisé : vérification URLs + relance épisodes manquants.',
             ]],
         ], now()->addHours(2));
 
