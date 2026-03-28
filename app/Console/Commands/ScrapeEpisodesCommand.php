@@ -626,6 +626,7 @@ class ScrapeEpisodesCommand extends Command
                 'title' => (string) $episode['title'],
                 'episode_number' => $episode['episode_number'] ?? null,
                 'image_url' => $episode['image_url'] ?? null,
+                'is_new' => true,
                 'updated_at' => $now,
                 'created_at' => $now,
             ])
