@@ -32,6 +32,9 @@ class RunScrapeEpisodesJob implements ShouldQueue
             'tracking_key'   => $this->trackingKey,
             'list_page_url'  => $this->listPageUrl,
             'series_info_id' => $this->seriesInfoId,
+            'episode_start'  => $this->episodeStart,
+            'episode_end'    => $this->episodeEnd,
+            'retry_errors'   => $this->retryErrors,
         ]);
 
         $args = [

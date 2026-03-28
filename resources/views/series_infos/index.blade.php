@@ -496,6 +496,12 @@
 
         const formData = new FormData(addSeriesForm);
 
+        // Debug: log les valeurs envoyées
+        console.log('[Scrape] isPreviewStepCompleted:', isPreviewStepCompleted);
+        console.log('[Scrape] episode_start:', formData.get('episode_start'));
+        console.log('[Scrape] episode_end:', formData.get('episode_end'));
+        console.log('[Scrape] list_page_url:', formData.get('list_page_url'));
+
         try {
             const endpoint = isPreviewStepCompleted
                 ? '{{ route('series-infos.scrape') }}'
