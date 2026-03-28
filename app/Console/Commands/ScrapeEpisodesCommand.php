@@ -342,7 +342,15 @@ class ScrapeEpisodesCommand extends Command
                 ->implode(' ');
             $orderExpr = $orderCase !== '' ? "CASE {$orderCase} ELSE 999 END" : 'id';
 
-            $serverQuery = $episode->servers()->orderByRaw($orderExpr);
+            // Filtrer uniquement les hôtes autorisés (évite de traiter d'anciens serveurs en base)
+            $allowedHosts = collect(config('scraper.allowed_hosts', ['vdesk']))
+                ->map(fn (string $h): string => mb_strtolower($h))
+                ->values()
+                ->all();
+
+            $serverQuery = $episode->servers()
+                ->whereRaw('LOWER(host) IN (' . collect($allowedHosts)->map(fn () => '?')->implode(',') . ')', $allowedHosts)
+                ->orderByRaw($orderExpr);
 
             if ($this->option('only-pending')) {
                 $serverQuery->where('status', EpisodeServer::STATUS_PENDING);
