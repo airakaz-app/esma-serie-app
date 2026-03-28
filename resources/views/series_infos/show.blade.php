@@ -415,6 +415,7 @@
                                             data-video-url="{{ $playableUrl }}"
                                             data-video-key="{{ $episodeVideoKey }}"
                                             data-video-title="{{ $episode->title }}"
+                                            data-manual-url-action="{{ route('series-infos.episodes.manual-final-url', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}"
                                         >
                                             @if ($episodeAlreadyWatched)
                                                 <span aria-hidden="true">👁️</span>
@@ -496,6 +497,16 @@
                             class="link-info text-decoration-underline"
                             style="font-size: 0.68rem;"
                         ></a>
+                        <button
+                            type="button"
+                            id="videoPlayerEditUrlButton"
+                            class="btn btn-outline-warning btn-sm ms-2 py-0 px-2"
+                            data-bs-toggle="modal"
+                            data-bs-target="#manualFinalUrlModal"
+                            title="Modifier l'URL finale"
+                        >
+                            ✏️
+                        </button>
                     </p>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
@@ -561,9 +572,10 @@
             const triggerButton = event.relatedTarget;
             const actionUrl = triggerButton?.getAttribute('data-manual-url-action') ?? '';
             const episodeTitle = triggerButton?.getAttribute('data-episode-title') ?? '';
+            const defaultFinalUrl = triggerButton?.getAttribute('data-final-url-default') ?? '';
 
             manualFinalUrlForm.setAttribute('action', actionUrl);
-            manualFinalUrlInput.value = '';
+            manualFinalUrlInput.value = defaultFinalUrl;
             manualFinalUrlInput.setCustomValidity('');
             manualFinalUrlEpisodeTitle.textContent = episodeTitle || '-';
         });
@@ -877,6 +889,7 @@
     const videoPlayerModalElement = document.getElementById('videoPlayerModal');
     const videoElement = document.getElementById('episodeVideoPlayer');
     const videoPlayerStatus = document.getElementById('videoPlayerStatus');
+    const videoPlayerEditUrlButton = document.getElementById('videoPlayerEditUrlButton');
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
     const isAuthenticated = {{ auth()->check() ? 'true' : 'false' }};
     const historyShowUrl = "{{ route('video-watch-histories.show') }}";
@@ -1088,6 +1101,13 @@
                 videoPlayerUrlWrapper.classList.remove('d-none');
             }
 
+            if (videoPlayerEditUrlButton) {
+                const manualUrlAction = trigger.dataset.manualUrlAction ?? '';
+                videoPlayerEditUrlButton.setAttribute('data-manual-url-action', manualUrlAction);
+                videoPlayerEditUrlButton.setAttribute('data-episode-title', videoTitle);
+                videoPlayerEditUrlButton.setAttribute('data-final-url-default', videoUrl);
+            }
+
             if (player === null) {
                 player = new Plyr(videoElement, {
                     controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
@@ -1165,6 +1185,12 @@
                 videoPlayerUrlLink.href = '#';
                 videoPlayerUrlLink.textContent = '';
                 videoPlayerUrlWrapper.classList.add('d-none');
+            }
+
+            if (videoPlayerEditUrlButton) {
+                videoPlayerEditUrlButton.setAttribute('data-manual-url-action', '');
+                videoPlayerEditUrlButton.setAttribute('data-episode-title', '');
+                videoPlayerEditUrlButton.setAttribute('data-final-url-default', '');
             }
         });
 
