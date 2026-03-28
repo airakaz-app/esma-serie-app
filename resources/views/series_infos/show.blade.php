@@ -53,12 +53,43 @@
                 display: none !important;
             }
         }
+
+        @media (max-width: 575.98px) {
+            .episodes-toolbar .btn,
+            .episodes-bulk-actions .btn {
+                font-size: 0.8125rem;
+                padding: 0.35rem 0.65rem;
+            }
+
+            .episodes-bulk-actions {
+                gap: 0.5rem;
+            }
+
+            .episode-card .card-body {
+                padding: 0.8rem;
+            }
+
+            .episode-card .episode-title {
+                font-size: 0.95rem;
+                line-height: 1.25rem;
+            }
+
+            .episode-card .episode-actions {
+                gap: 0.4rem;
+            }
+
+            .episode-card .episode-actions .btn {
+                font-size: 0.8rem;
+                line-height: 1.15;
+                padding: 0.3rem 0.55rem;
+            }
+        }
     </style>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
 <div class="container py-4 py-lg-5 px-3 px-sm-4">
-    <div class="d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-2">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
         <a href="{{ route('series-infos.index') }}" class="text-decoration-none text-info">← Retour aux séries</a>
         <form method="POST" action="{{ route('logout') }}">
             @csrf
@@ -121,7 +152,7 @@
     @endphp
 
     <section class="mt-4">
-        <div class="d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-2 mb-3">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 episodes-toolbar">
             <h2 class="h4 mb-0">Épisodes</h2>
 
             <button
@@ -135,7 +166,7 @@
         </div>
 
         @if ($seriesInfo->episodes->isNotEmpty())
-            <form method="POST" action="{{ route('series-infos.episodes.bulk-destroy', $seriesInfo) }}" id="bulkDeleteEpisodesForm" class="mb-2 d-flex flex-column flex-sm-row align-items-start align-items-sm-center gap-2" onsubmit="return window.confirmBulkDeleteEpisodes();">
+            <form method="POST" action="{{ route('series-infos.episodes.bulk-destroy', $seriesInfo) }}" id="bulkDeleteEpisodesForm" class="mb-2 d-flex flex-wrap align-items-center episodes-bulk-actions" onsubmit="return window.confirmBulkDeleteEpisodes();">
                 @csrf
                 @method('DELETE')
                 <div class="form-check m-0">
@@ -184,7 +215,7 @@
             </div>
         @endif
 
-        <div class="row g-3 g-md-4 row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xxl-4">
+        <div class="row g-3 g-md-4 row-cols-2 row-cols-lg-3 row-cols-xxl-4">
             @forelse ($seriesInfo->episodes as $episode)
                 @php
                     $playableServer = $episode->servers->first(fn ($server): bool => (string) $server->final_url !== '');
@@ -196,7 +227,7 @@
                 @endphp
 
                 <div class="col">
-                    <article class="card h-100 border-0 shadow-sm bg-dark text-light">
+                    <article class="card h-100 border-0 shadow-sm bg-dark text-light episode-card">
                         <div class="ratio ratio-16x9 bg-black position-relative">
                             @if ($seriesInfo->cover_image_url)
                                 <img
@@ -229,10 +260,10 @@
                                         data-episode-title="{{ $episode->title }}"
                                         data-download-url="{{ $playableUrl ? route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) : '' }}"
                                     >
-                                    <label class="form-check-label small text-secondary" for="episode-{{ $episode->id }}">Sélectionner</label>
+                                    <label class="form-check-label small text-secondary episode-select-label" for="episode-{{ $episode->id }}">Sélectionner</label>
                                 </div>
 
-                                <div class="d-grid gap-2 d-sm-flex flex-sm-column align-items-sm-end w-100 w-sm-auto">
+                                <div class="d-flex flex-wrap justify-content-end episode-actions">
                                     @if ($playableUrl)
                                         <button
                                             type="button"
@@ -266,7 +297,7 @@
                             </div>
 
                             <div class="d-flex align-items-center gap-2 mb-2">
-                                <h3 class="h6 card-title mb-0">{{ $episode->title }}</h3>
+                                <h3 class="h6 card-title mb-0 episode-title">{{ $episode->title }}</h3>
                                 @if ($episodeCompleted)
                                     <span class="badge text-bg-success">Terminé</span>
                                 @endif
