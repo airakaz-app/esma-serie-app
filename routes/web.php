@@ -27,6 +27,7 @@ Route::middleware('auth')->group(function (): void {
     Route::delete('/series-infos/{seriesInfo}/episodes/{episode}', [SeriesInfoController::class, 'destroyEpisode'])->name('series-infos.episodes.destroy');
     Route::delete('/series-infos/{seriesInfo}/episodes', [SeriesInfoController::class, 'bulkDestroyEpisodes'])->name('series-infos.episodes.bulk-destroy');
     Route::get('/series-infos/{seriesInfo}/episodes/{episode}/download', [SeriesInfoController::class, 'downloadEpisode'])->name('series-infos.episodes.download');
+    Route::post('/series-infos/{seriesInfo}/episodes/{episode}/manual-final-url', [SeriesInfoController::class, 'storeManualFinalUrl'])->name('series-infos.episodes.manual-final-url');
 
     Route::get('/video-watch-histories', [VideoWatchHistoryController::class, 'show'])->name('video-watch-histories.show');
     Route::put('/video-watch-histories', [VideoWatchHistoryController::class, 'upsert'])->name('video-watch-histories.upsert');

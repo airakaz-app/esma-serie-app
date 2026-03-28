@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ScrapeSeriesInfoRequest;
 use App\Http\Requests\DeleteEpisodesRequest;
+use App\Http\Requests\StoreEpisodeManualFinalUrlRequest;
 use App\Jobs\RunScrapeEpisodesJob;
 use App\Services\Episodes\EpisodeSyncService;
 use App\Models\Episode;
+use App\Models\EpisodeServer;
 use App\Models\SeriesInfo;
 use App\Models\VideoWatchHistory;
 use App\Services\Scraper\HtmlFetcher;
@@ -394,6 +396,46 @@ class SeriesInfoController extends Controller
         }, $fileName, [
             'Content-Type' => $contentType,
         ]);
+    }
+
+    public function storeManualFinalUrl(StoreEpisodeManualFinalUrlRequest $request, SeriesInfo $seriesInfo, Episode $episode): RedirectResponse
+    {
+        if ($episode->series_info_id !== $seriesInfo->id) {
+            abort(404);
+        }
+
+        $finalUrl = trim((string) $request->validated('final_url'));
+
+        $server = $episode->servers()
+            ->orderByDesc('id')
+            ->first();
+
+        if ($server === null) {
+            $server = new EpisodeServer([
+                'server_name' => 'Manual',
+                'host' => parse_url($finalUrl, PHP_URL_HOST) ?: 'manual',
+                'server_page_url' => $episode->page_url,
+            ]);
+            $server->episode()->associate($episode);
+        }
+
+        $server->forceFill([
+            'final_url' => $finalUrl,
+            'click_success' => true,
+            'status' => EpisodeServer::STATUS_DONE,
+            'error_message' => null,
+            'last_scraped_at' => now(),
+        ])->save();
+
+        $episode->forceFill([
+            'status' => Episode::STATUS_DONE,
+            'error_message' => null,
+            'last_scraped_at' => now(),
+        ])->save();
+
+        return redirect()
+            ->route('series-infos.show', $seriesInfo)
+            ->with('status', sprintf('URL finale ajoutée manuellement pour "%s".', $episode->title));
     }
 
     private function downloadFileName(Episode $episode): string
