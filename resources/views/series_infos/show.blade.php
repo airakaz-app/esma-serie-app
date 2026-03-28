@@ -120,6 +120,15 @@
             padding-inline: 0.75rem;
         }
 
+        .episode-manual-url-btn {
+            max-width: 2.1rem;
+            min-width: 2.1rem;
+            padding-inline: 0;
+            font-weight: 700;
+            font-size: 1rem;
+            line-height: 1;
+        }
+
         .episode-title {
             font-weight: 700;
             line-height: 1.35;
@@ -406,6 +415,7 @@
                                             data-video-url="{{ $playableUrl }}"
                                             data-video-key="{{ $episodeVideoKey }}"
                                             data-video-title="{{ $episode->title }}"
+                                            data-manual-url-action="{{ route('series-infos.episodes.manual-final-url', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}"
                                         >
                                             @if ($episodeAlreadyWatched)
                                                 <span aria-hidden="true">👁️</span>
@@ -419,6 +429,19 @@
                                         >
                                             Télécharger
                                         </a>
+                                    @endif
+
+                                    @if (! $playableUrl && $episode->status === \App\Models\Episode::STATUS_ERROR)
+                                        <button
+                                            type="button"
+                                            class="btn btn-outline-warning btn-sm w-auto episode-manual-url-btn"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#manualFinalUrlModal"
+                                            data-manual-url-action="{{ route('series-infos.episodes.manual-final-url', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}"
+                                            data-episode-title="{{ $episode->title }}"
+                                        >
+                                            +
+                                        </button>
                                     @endif
 
                                     <form method="POST" action="{{ route('series-infos.episodes.destroy', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}" onsubmit="return confirm('Supprimer cet épisode ?');">
@@ -474,6 +497,16 @@
                             class="link-info text-decoration-underline"
                             style="font-size: 0.68rem;"
                         ></a>
+                        <button
+                            type="button"
+                            id="videoPlayerEditUrlButton"
+                            class="btn btn-outline-warning btn-sm ms-2 py-0 px-2"
+                            data-bs-toggle="modal"
+                            data-bs-target="#manualFinalUrlModal"
+                            title="Modifier l'URL finale"
+                        >
+                            ✏️
+                        </button>
                     </p>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
@@ -488,6 +521,38 @@
     </div>
 </div>
 
+<div class="modal fade" id="manualFinalUrlModal" tabindex="-1" aria-labelledby="manualFinalUrlModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-light border border-secondary-subtle">
+            <form method="POST" id="manualFinalUrlForm" action="">
+                @csrf
+                <div class="modal-header">
+                    <h5 class="modal-title" id="manualFinalUrlModalLabel">Ajouter une URL finale</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-secondary mb-2">Épisode : <span id="manualFinalUrlEpisodeTitle">-</span></p>
+                    <label for="manualFinalUrlInput" class="form-label">URL finale correcte</label>
+                    <input
+                        type="url"
+                        class="form-control"
+                        id="manualFinalUrlInput"
+                        name="final_url"
+                        placeholder="https://..."
+                        required
+                        maxlength="2048"
+                    >
+                    <p class="small text-secondary mt-2 mb-0">Vérification rapide : l'URL doit commencer par http:// ou https://</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-warning">Enregistrer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 @if ($isScrapingInProgress)
     <script>
         window.setTimeout(() => {
@@ -495,6 +560,34 @@
         }, 10000);
     </script>
 @endif
+
+<script>
+    const manualFinalUrlModal = document.getElementById('manualFinalUrlModal');
+    const manualFinalUrlForm = document.getElementById('manualFinalUrlForm');
+    const manualFinalUrlInput = document.getElementById('manualFinalUrlInput');
+    const manualFinalUrlEpisodeTitle = document.getElementById('manualFinalUrlEpisodeTitle');
+
+    if (manualFinalUrlModal && manualFinalUrlForm && manualFinalUrlInput && manualFinalUrlEpisodeTitle) {
+        manualFinalUrlModal.addEventListener('show.bs.modal', (event) => {
+            const triggerButton = event.relatedTarget;
+            const actionUrl = triggerButton?.getAttribute('data-manual-url-action') ?? '';
+            const episodeTitle = triggerButton?.getAttribute('data-episode-title') ?? '';
+            const defaultFinalUrl = triggerButton?.getAttribute('data-final-url-default') ?? '';
+
+            manualFinalUrlForm.setAttribute('action', actionUrl);
+            manualFinalUrlInput.value = defaultFinalUrl;
+            manualFinalUrlInput.setCustomValidity('');
+            manualFinalUrlEpisodeTitle.textContent = episodeTitle || '-';
+        });
+
+        manualFinalUrlInput.addEventListener('input', () => {
+            const value = manualFinalUrlInput.value.trim();
+            const isValidScheme = value === '' || /^https?:\/\//i.test(value);
+
+            manualFinalUrlInput.setCustomValidity(isValidScheme ? '' : 'L\'URL doit commencer par http:// ou https://');
+        });
+    }
+</script>
 
 <script>
         const refreshEpisodesButton = document.getElementById('refreshEpisodesButton');
@@ -796,6 +889,7 @@
     const videoPlayerModalElement = document.getElementById('videoPlayerModal');
     const videoElement = document.getElementById('episodeVideoPlayer');
     const videoPlayerStatus = document.getElementById('videoPlayerStatus');
+    const videoPlayerEditUrlButton = document.getElementById('videoPlayerEditUrlButton');
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
     const isAuthenticated = {{ auth()->check() ? 'true' : 'false' }};
     const historyShowUrl = "{{ route('video-watch-histories.show') }}";
@@ -1007,6 +1101,13 @@
                 videoPlayerUrlWrapper.classList.remove('d-none');
             }
 
+            if (videoPlayerEditUrlButton) {
+                const manualUrlAction = trigger.dataset.manualUrlAction ?? '';
+                videoPlayerEditUrlButton.setAttribute('data-manual-url-action', manualUrlAction);
+                videoPlayerEditUrlButton.setAttribute('data-episode-title', videoTitle);
+                videoPlayerEditUrlButton.setAttribute('data-final-url-default', videoUrl);
+            }
+
             if (player === null) {
                 player = new Plyr(videoElement, {
                     controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
@@ -1084,6 +1185,12 @@
                 videoPlayerUrlLink.href = '#';
                 videoPlayerUrlLink.textContent = '';
                 videoPlayerUrlWrapper.classList.add('d-none');
+            }
+
+            if (videoPlayerEditUrlButton) {
+                videoPlayerEditUrlButton.setAttribute('data-manual-url-action', '');
+                videoPlayerEditUrlButton.setAttribute('data-episode-title', '');
+                videoPlayerEditUrlButton.setAttribute('data-final-url-default', '');
             }
         });
 
