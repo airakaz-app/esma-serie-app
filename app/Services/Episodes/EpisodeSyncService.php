@@ -4,12 +4,16 @@ namespace App\Services\Episodes;
 
 use App\Models\Episode;
 use App\Models\SeriesInfo;
-use Illuminate\Support\Facades\Artisan;
+use App\Services\Scraper\EpisodeListScraper;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class EpisodeSyncService
 {
+    public function __construct(private readonly EpisodeListScraper $episodeListScraper)
+    {
+    }
+
     /**
      * @return array{status:string,message:string,series_total:int,series_processed:int,new_episodes_count:int,errors:array<int,string>}
      */
@@ -28,8 +32,8 @@ class EpisodeSyncService
             ];
         }
 
-        $startedAt = now();
         $seriesProcessed = 0;
+        $newEpisodesCount = 0;
         $errors = [];
         $seriesInfos = SeriesInfo::query()
             ->whereNotNull('series_page_url')
@@ -41,18 +45,13 @@ class EpisodeSyncService
             foreach ($seriesInfos as $seriesInfo) {
                 $seriesProcessed++;
 
-                $exitCode = Artisan::call('scrape:episodes', [
-                    '--list-page-url' => $seriesInfo->series_page_url,
-                ]);
-
-                if ($exitCode !== 0) {
-                    $errors[] = sprintf('Échec sync série "%s" (#%d).', $seriesInfo->title ?: 'Sans titre', $seriesInfo->id);
+                try {
+                    $newForSeries = $this->syncSeriesNewEpisodes($seriesInfo);
+                    $newEpisodesCount += $newForSeries;
+                } catch (\Throwable $exception) {
+                    $errors[] = sprintf('Échec sync série "%s" (#%d): %s', $seriesInfo->title ?: 'Sans titre', $seriesInfo->id, $exception->getMessage());
                 }
             }
-
-            $newEpisodesCount = Episode::query()
-                ->where('created_at', '>=', $startedAt)
-                ->count();
 
             $status = $errors === [] ? 'completed' : 'completed_with_errors';
 
@@ -77,11 +76,83 @@ class EpisodeSyncService
                 'message' => 'Erreur pendant la synchronisation des épisodes.',
                 'series_total' => $seriesInfos->count(),
                 'series_processed' => $seriesProcessed,
-                'new_episodes_count' => 0,
+                'new_episodes_count' => $newEpisodesCount,
                 'errors' => [$exception->getMessage()],
             ];
         } finally {
             $lock->release();
         }
+    }
+
+    private function syncSeriesNewEpisodes(SeriesInfo $seriesInfo): int
+    {
+        $scrapedEpisodes = $this->episodeListScraper->scrape($seriesInfo->series_page_url);
+
+        if ($scrapedEpisodes === []) {
+            return 0;
+        }
+
+        $latestStoredEpisodeNumberRaw = Episode::query()
+            ->where('series_info_id', $seriesInfo->id)
+            ->max('episode_number');
+        $latestStoredEpisodeNumber = $latestStoredEpisodeNumberRaw !== null ? (int) $latestStoredEpisodeNumberRaw : null;
+
+        $alreadyKnownUrls = Episode::query()
+            ->where('series_info_id', $seriesInfo->id)
+            ->pluck('page_url')
+            ->all();
+
+        $knownUrlMap = array_fill_keys($alreadyKnownUrls, true);
+
+        $newEpisodes = collect($scrapedEpisodes)
+            ->filter(function (array $episode) use ($latestStoredEpisodeNumber, $knownUrlMap): bool {
+                $pageUrl = trim((string) ($episode['page_url'] ?? ''));
+
+                if ($pageUrl === '' || isset($knownUrlMap[$pageUrl])) {
+                    return false;
+                }
+
+                $episodeNumber = $episode['episode_number'] ?? null;
+
+                if (is_int($latestStoredEpisodeNumber) && is_int($episodeNumber)) {
+                    return $episodeNumber > $latestStoredEpisodeNumber;
+                }
+
+                return true;
+            })
+            ->values();
+
+        if ($newEpisodes->isEmpty()) {
+            return 0;
+        }
+
+        Episode::query()
+            ->where('series_info_id', $seriesInfo->id)
+            ->where('is_new', true)
+            ->update(['is_new' => false]);
+
+        $now = now();
+
+        $insertPayload = $newEpisodes
+            ->map(fn (array $episode): array => [
+                'series_info_id' => $seriesInfo->id,
+                'title' => (string) ($episode['title'] ?? ''),
+                'page_url' => (string) $episode['page_url'],
+                'episode_number' => $episode['episode_number'] ?? null,
+                'image_url' => $episode['image_url'] ?? null,
+                'status' => Episode::STATUS_PENDING,
+                'is_new' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ])
+            ->all();
+
+        Episode::query()->insertOrIgnore($insertPayload);
+
+        return Episode::query()
+            ->where('series_info_id', $seriesInfo->id)
+            ->where('is_new', true)
+            ->where('created_at', '>=', $now)
+            ->count();
     }
 }

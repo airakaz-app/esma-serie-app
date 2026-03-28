@@ -17,6 +17,10 @@ class EpisodeSyncServiceTest extends TestCase
 
         $this->instance(EpisodeSyncService::class, new class extends EpisodeSyncService
         {
+            public function __construct()
+            {
+            }
+
             public function syncAllSeries(string $trigger): array
             {
                 return [
