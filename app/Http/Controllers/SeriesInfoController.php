@@ -9,6 +9,7 @@ use App\Models\Episode;
 use App\Models\SeriesInfo;
 use App\Models\VideoWatchHistory;
 use App\Services\Scraper\HtmlFetcher;
+use App\Services\Scraper\EpisodeListScraper;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -161,11 +162,15 @@ class SeriesInfoController extends Controller
         $trackingKey = (string) Str::uuid();
         $listPageUrl = $request->string('list_page_url')->toString();
         $retryErrors = $request->boolean('retry_errors');
+        $episodeStart = $request->filled('episode_start') ? $request->integer('episode_start') : null;
+        $episodeEnd = $request->filled('episode_end') ? $request->integer('episode_end') : null;
 
         Log::info('Demande de scraping reçue.', [
             'tracking_key' => $trackingKey,
             'list_page_url' => $listPageUrl,
             'retry_errors' => $retryErrors,
+            'episode_start' => $episodeStart,
+            'episode_end' => $episodeEnd,
         ]);
 
         Cache::put($this->trackingCacheKey($trackingKey), [
@@ -188,7 +193,7 @@ class SeriesInfoController extends Controller
             ],
         ], now()->addHours(2));
 
-        RunScrapeEpisodesJob::dispatch($listPageUrl, $trackingKey, $retryErrors);
+        RunScrapeEpisodesJob::dispatch($listPageUrl, $trackingKey, $retryErrors, null, $episodeStart, $episodeEnd);
 
         Log::info('Job de scraping mis en file.', [
             'tracking_key' => $trackingKey,
@@ -197,6 +202,32 @@ class SeriesInfoController extends Controller
         return response()->json([
             'started' => true,
             'trackingKey' => $trackingKey,
+        ]);
+    }
+
+    public function scrapePreview(ScrapeSeriesInfoRequest $request, EpisodeListScraper $episodeListScraper): JsonResponse
+    {
+        $listPageUrl = $request->string('list_page_url')->toString();
+
+        try {
+            $episodes = $episodeListScraper->scrape($listPageUrl);
+        } catch (\Throwable $exception) {
+            return response()->json([
+                'message' => 'Impossible de récupérer les épisodes pour cette URL.',
+                'error' => $exception->getMessage(),
+            ], 422);
+        }
+
+        $episodeNumbers = collect($episodes)
+            ->pluck('episode_number')
+            ->filter(fn ($episodeNumber): bool => is_int($episodeNumber))
+            ->values();
+
+        return response()->json([
+            'episodesTotal' => count($episodes),
+            'hasEpisodeNumbers' => $episodeNumbers->isNotEmpty(),
+            'episodeMin' => $episodeNumbers->isEmpty() ? null : $episodeNumbers->min(),
+            'episodeMax' => $episodeNumbers->isEmpty() ? null : $episodeNumbers->max(),
         ]);
     }
 

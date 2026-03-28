@@ -168,6 +168,34 @@
 
                 <div id="addSeriesError" class="alert alert-danger py-2 px-3 mb-0 d-none"></div>
 
+                <div id="episodePreviewSection" class="d-none border border-secondary rounded p-3">
+                    <p id="episodePreviewSummary" class="mb-2 small"></p>
+                    <div id="episodeRangeSection" class="row g-2">
+                        <div class="col-12 col-sm-6">
+                            <label for="episodeStart" class="form-label small text-secondary mb-1">Épisode début</label>
+                            <input
+                                type="number"
+                                id="episodeStart"
+                                name="episode_start"
+                                class="form-control bg-dark text-light border-secondary"
+                                min="1"
+                                placeholder="Ex: 21"
+                            >
+                        </div>
+                        <div class="col-12 col-sm-6">
+                            <label for="episodeEnd" class="form-label small text-secondary mb-1">Épisode fin</label>
+                            <input
+                                type="number"
+                                id="episodeEnd"
+                                name="episode_end"
+                                class="form-control bg-dark text-light border-secondary"
+                                min="1"
+                                placeholder="Ex: 40"
+                            >
+                        </div>
+                    </div>
+                </div>
+
                 <div id="modalScrapeProgress" class="d-none">
                     <div class="d-flex justify-content-between small mb-2">
                         <span id="modalScrapeMessage">Démarrage...</span>
@@ -181,7 +209,7 @@
 
                 <button type="submit" class="btn btn-primary" id="submitAddSeriesBtn">
                     <span id="addSeriesSpinner" class="spinner-border spinner-border-sm me-2 d-none" role="status" aria-hidden="true"></span>
-                    Lancer
+                    Vérifier les épisodes
                 </button>
             </form>
         </div>
@@ -196,6 +224,11 @@
     const submitButton = document.getElementById('submitAddSeriesBtn');
     const spinnerElement = document.getElementById('addSeriesSpinner');
     const errorElement = document.getElementById('addSeriesError');
+    const episodePreviewSection = document.getElementById('episodePreviewSection');
+    const episodePreviewSummary = document.getElementById('episodePreviewSummary');
+    const episodeRangeSection = document.getElementById('episodeRangeSection');
+    const episodeStartInput = document.getElementById('episodeStart');
+    const episodeEndInput = document.getElementById('episodeEnd');
 
     // Recherche externe
     const searchQueryInput = document.getElementById('searchQuery');
@@ -272,6 +305,20 @@
     searchQueryInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); runSearch(); }
     });
+    listPageUrlInput.addEventListener('input', () => {
+        if (!isPreviewStepCompleted) {
+            return;
+        }
+
+        isPreviewStepCompleted = false;
+        episodePreviewSection.classList.add('d-none');
+        episodePreviewSummary.textContent = '';
+        episodeRangeSection.classList.remove('d-none');
+        episodeStartInput.value = '';
+        episodeEndInput.value = '';
+        submitButton.textContent = 'Vérifier les épisodes';
+        submitButton.prepend(spinnerElement);
+    });
     const modalScrapeProgress = document.getElementById('modalScrapeProgress');
     const modalScrapeMessage = document.getElementById('modalScrapeMessage');
     const modalScrapePercent = document.getElementById('modalScrapePercent');
@@ -285,6 +332,7 @@
     let pollingIntervalId = null;
     let hasReloadedAfterSeriesCreation = false;
     let lastProgressTimestamp = null;
+    let isPreviewStepCompleted = false;
 
     const toggleModal = (isOpen) => {
         if (isOpen) {
@@ -411,6 +459,12 @@
         searchError.classList.add('d-none');
         searchResults.classList.add('d-none');
         searchResultsList.innerHTML = '';
+        isPreviewStepCompleted = false;
+        episodePreviewSection.classList.add('d-none');
+        episodePreviewSummary.textContent = '';
+        episodeRangeSection.classList.remove('d-none');
+        submitButton.textContent = 'Vérifier les épisodes';
+        submitButton.prepend(spinnerElement);
         toggleModal(true);
     });
 
@@ -421,9 +475,6 @@
     addSeriesForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
-        hasReloadedAfterSeriesCreation = false;
-        lastProgressTimestamp = null;
-        stopPolling();
         spinnerElement.classList.remove('d-none');
         submitButton.disabled = true;
         errorElement.classList.add('d-none');
@@ -431,7 +482,11 @@
         const formData = new FormData(addSeriesForm);
 
         try {
-            const response = await fetch('{{ route('series-infos.scrape') }}', {
+            const endpoint = isPreviewStepCompleted
+                ? '{{ route('series-infos.scrape') }}'
+                : '{{ route('series-infos.scrape-preview') }}';
+
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
@@ -447,6 +502,51 @@
                 throw new Error(firstError);
             }
 
+            if (!isPreviewStepCompleted) {
+                const episodesTotal = Number(responseData.episodesTotal ?? 0);
+                const hasEpisodeNumbers = Boolean(responseData.hasEpisodeNumbers);
+                const episodeMin = responseData.episodeMin;
+                const episodeMax = responseData.episodeMax;
+
+                if (episodesTotal === 0) {
+                    throw new Error('Aucun épisode trouvé sur cette URL.');
+                }
+
+                episodePreviewSection.classList.remove('d-none');
+
+                if (hasEpisodeNumbers) {
+                    episodePreviewSummary.textContent = `Épisodes trouvés: ${episodesTotal}. Plage détectée: ${episodeMin} à ${episodeMax}.`;
+                    episodeRangeSection.classList.remove('d-none');
+                    episodeStartInput.min = String(episodeMin);
+                    episodeStartInput.max = String(episodeMax);
+                    episodeEndInput.min = String(episodeMin);
+                    episodeEndInput.max = String(episodeMax);
+
+                    if (episodeStartInput.value === '') {
+                        episodeStartInput.value = String(episodeMin);
+                    }
+
+                    if (episodeEndInput.value === '') {
+                        episodeEndInput.value = String(episodeMax);
+                    }
+                } else {
+                    episodePreviewSummary.textContent = `Épisodes trouvés: ${episodesTotal}. Impossible de détecter les numéros, le téléchargement portera sur tous les épisodes détectés.`;
+                    episodeRangeSection.classList.add('d-none');
+                    episodeStartInput.value = '';
+                    episodeEndInput.value = '';
+                }
+
+                isPreviewStepCompleted = true;
+                submitButton.textContent = 'Lancer téléchargement';
+                submitButton.prepend(spinnerElement);
+                spinnerElement.classList.add('d-none');
+                submitButton.disabled = false;
+                return;
+            }
+
+            hasReloadedAfterSeriesCreation = false;
+            lastProgressTimestamp = null;
+            stopPolling();
             spinnerElement.classList.add('d-none');
             startPolling(responseData.trackingKey);
         } catch (error) {
