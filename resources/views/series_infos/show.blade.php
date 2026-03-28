@@ -56,21 +56,27 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: linear-gradient(to top, rgba(2, 6, 23, 0.72), rgba(2, 6, 23, 0.15) 55%, rgba(2, 6, 23, 0));
+            background: linear-gradient(to top, rgba(2, 6, 23, 0.68), rgba(2, 6, 23, 0.1) 45%, rgba(2, 6, 23, 0));
             pointer-events: none;
         }
 
         .episode-number-badge {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
+            width: fit-content;
+            max-width: max-content;
             border: 1px solid rgba(255, 255, 255, 0.22);
-            border-radius: 999px;
-            padding: 0.4rem 0.75rem;
-            font-size: 0.82rem;
+            border-radius: 0.55rem;
+            padding: 0.32rem 0.65rem;
+            font-size: 0.8rem;
             letter-spacing: 0.03em;
             font-weight: 700;
-            background: rgba(220, 38, 38, 0.9);
-            box-shadow: 0 0.45rem 0.9rem rgba(220, 38, 38, 0.28);
+            line-height: 1.1;
+            white-space: nowrap;
+            color: #fff;
+            background: rgba(220, 38, 38, 0.85);
+            box-shadow: 0 0.3rem 0.8rem rgba(220, 38, 38, 0.22);
         }
 
         .episode-card .card-body {
@@ -81,8 +87,8 @@
         }
 
         .episode-top-row {
-            background: rgba(15, 23, 42, 0.68);
-            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(15, 23, 42, 0.45);
+            border: 1px solid rgba(148, 163, 184, 0.16);
             border-radius: 0.75rem;
             padding: 0.55rem 0.7rem;
         }
@@ -96,6 +102,7 @@
             font-weight: 700;
             line-height: 1.35;
             color: #f8fafc;
+            word-break: break-word;
         }
 
         .episode-card-status {
