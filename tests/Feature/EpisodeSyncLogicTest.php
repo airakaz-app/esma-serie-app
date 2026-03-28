@@ -62,4 +62,37 @@ class EpisodeSyncLogicTest extends TestCase
             'is_new' => false,
         ]);
     }
+
+    public function test_sync_does_not_tag_new_when_series_has_no_existing_episodes(): void
+    {
+        $seriesInfo = SeriesInfo::query()->create([
+            'source_episode_page_url' => 'https://example.com/watch/serie-y/episode-1/see/',
+            'series_page_url' => 'https://example.com/watch/serie-y/',
+            'title' => 'Serie Y',
+        ]);
+
+        $scraper = $this->createMock(EpisodeListScraper::class);
+        $scraper->method('scrape')->willReturn([
+            ['title' => 'Episode 1', 'page_url' => 'https://example.com/watch/serie-y/ep-1/see/', 'episode_number' => 1, 'image_url' => null],
+            ['title' => 'Episode 2', 'page_url' => 'https://example.com/watch/serie-y/ep-2/see/', 'episode_number' => 2, 'image_url' => null],
+        ]);
+
+        $service = new EpisodeSyncService($scraper);
+        $result = $service->syncAllSeries('test');
+
+        $this->assertSame('completed', $result['status']);
+        $this->assertSame(2, $result['new_episodes_count']);
+
+        $this->assertDatabaseHas('episodes', [
+            'series_info_id' => $seriesInfo->id,
+            'episode_number' => 1,
+            'is_new' => false,
+        ]);
+        $this->assertDatabaseHas('episodes', [
+            'series_info_id' => $seriesInfo->id,
+            'episode_number' => 2,
+            'is_new' => false,
+        ]);
+    }
+
 }

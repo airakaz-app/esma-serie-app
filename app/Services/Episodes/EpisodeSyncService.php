@@ -92,6 +92,10 @@ class EpisodeSyncService
             return 0;
         }
 
+        $existingEpisodesCount = Episode::query()
+            ->where('series_info_id', $seriesInfo->id)
+            ->count();
+
         $latestStoredEpisodeNumberRaw = Episode::query()
             ->where('series_info_id', $seriesInfo->id)
             ->max('episode_number');
@@ -126,10 +130,14 @@ class EpisodeSyncService
             return 0;
         }
 
-        Episode::query()
-            ->where('series_info_id', $seriesInfo->id)
-            ->where('is_new', true)
-            ->update(['is_new' => false]);
+        $shouldTagAsNew = $existingEpisodesCount > 0;
+
+        if ($shouldTagAsNew) {
+            Episode::query()
+                ->where('series_info_id', $seriesInfo->id)
+                ->where('is_new', true)
+                ->update(['is_new' => false]);
+        }
 
         $now = now();
 
@@ -141,18 +149,12 @@ class EpisodeSyncService
                 'episode_number' => $episode['episode_number'] ?? null,
                 'image_url' => $episode['image_url'] ?? null,
                 'status' => Episode::STATUS_DONE,
-                'is_new' => true,
+                'is_new' => $shouldTagAsNew,
                 'created_at' => $now,
                 'updated_at' => $now,
             ])
             ->all();
 
-        Episode::query()->insertOrIgnore($insertPayload);
-
-        return Episode::query()
-            ->where('series_info_id', $seriesInfo->id)
-            ->where('is_new', true)
-            ->where('created_at', '>=', $now)
-            ->count();
+        return Episode::query()->insertOrIgnore($insertPayload);
     }
 }
