@@ -366,8 +366,18 @@ class ScrapeEpisodesCommand extends Command
             }
         }
 
-        $episodeStart = $this->option('episode-start') !== null ? (int) $this->option('episode-start') : null;
-        $episodeEnd = $this->option('episode-end') !== null ? (int) $this->option('episode-end') : null;
+        $rawStart = $this->option('episode-start');
+        $rawEnd   = $this->option('episode-end');
+
+        $episodeStart = ($rawStart !== null && $rawStart !== '') ? (int) $rawStart : null;
+        $episodeEnd   = ($rawEnd !== null && $rawEnd !== '') ? (int) $rawEnd : null;
+
+        Log::info('📋 episodeQuery: filtre épisode-start / épisode-end.', [
+            'raw_start'    => $rawStart,
+            'raw_end'      => $rawEnd,
+            'parsed_start' => $episodeStart,
+            'parsed_end'   => $episodeEnd,
+        ]);
 
         if ($episodeStart !== null) {
             $query->whereNotNull('episode_number')
@@ -378,6 +388,10 @@ class ScrapeEpisodesCommand extends Command
             $query->whereNotNull('episode_number')
                 ->where('episode_number', '<=', $episodeEnd);
         }
+
+        Log::info('📋 episodeQuery: SQL final.', [
+            'sql'      => $query->toRawSql(),
+        ]);
 
         return $query;
     }
