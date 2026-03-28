@@ -224,6 +224,22 @@
                     $episodeHistory = $watchHistoriesByKey->get($episodeVideoKey);
                     $episodeAlreadyWatched = $episodeHistory !== null && ((int) $episodeHistory->current_time > 0 || (bool) $episodeHistory->completed);
                     $episodeCompleted = $episodeHistory !== null && (bool) $episodeHistory->completed;
+                    $historyCurrentTime = max((int) ($episodeHistory?->current_time ?? 0), 0);
+                    $historyDuration = max((int) ($episodeHistory?->duration ?? 0), 0);
+                    $formatSeconds = static function (int $totalSeconds): string {
+                        $hours = intdiv($totalSeconds, 3600);
+                        $minutes = intdiv($totalSeconds % 3600, 60);
+                        $seconds = $totalSeconds % 60;
+
+                        if ($hours > 0) {
+                            return sprintf('%d:%02d:%02d', $hours, $minutes, $seconds);
+                        }
+
+                        return sprintf('%02d:%02d', $minutes, $seconds);
+                    };
+                    $episodeWatchProgress = $historyCurrentTime > 0 && $historyDuration > 0
+                        ? $formatSeconds($historyCurrentTime).' / '.$formatSeconds($historyDuration)
+                        : null;
                 @endphp
 
                 <div class="col">
@@ -313,6 +329,9 @@
                                     Lien final indisponible
                                 @endif
                             </p>
+                            @if ($episodeWatchProgress)
+                                <p class="small mb-0 mt-1 text-secondary">{{ $episodeWatchProgress }}</p>
+                            @endif
                         </div>
                     </article>
                 </div>
@@ -698,6 +717,23 @@
         }
     };
 
+    const formatSeconds = (totalSeconds) => {
+        if (!Number.isFinite(totalSeconds) || totalSeconds < 0) {
+            return '00:00';
+        }
+
+        const normalizedSeconds = Math.floor(totalSeconds);
+        const hours = Math.floor(normalizedSeconds / 3600);
+        const minutes = Math.floor((normalizedSeconds % 3600) / 60);
+        const seconds = normalizedSeconds % 60;
+
+        if (hours > 0) {
+            return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    };
+
     const getProgressPayload = (markAsCompleted = false) => {
         if (!player || !activeVideo) {
             return null;
@@ -886,8 +922,14 @@
                 const canResume = history && !history.completed && Number(history.current_time) > 0;
                 if (canResume) {
                     const resumeTime = Math.max(Number(history.current_time), 0);
+                    const historyDuration = Math.max(Number(history.duration), 0);
                     player.currentTime = resumeTime;
-                    updateVideoStatus(`Reprise à ${resumeTime}s.`);
+
+                    if (historyDuration > 0) {
+                        updateVideoStatus(`Reprise à ${formatSeconds(resumeTime)} / ${formatSeconds(historyDuration)}.`);
+                    } else {
+                        updateVideoStatus(`Reprise à ${formatSeconds(resumeTime)}.`);
+                    }
                 } else {
                     updateVideoStatus(autoPlayStarted ? 'Lecture démarrée.' : 'Prêt à lancer la lecture.');
                 }
