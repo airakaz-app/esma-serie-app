@@ -38,6 +38,100 @@
             height: 100%;
         }
 
+        .episode-card {
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 1rem;
+            overflow: hidden;
+            background: linear-gradient(180deg, #111827 0%, #0b1220 100%);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+
+        .episode-card:hover {
+            transform: translateY(-3px);
+            border-color: rgba(34, 211, 238, 0.45);
+            box-shadow: 0 0.85rem 1.8rem rgba(2, 132, 199, 0.2);
+        }
+
+        .episode-cover::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, rgba(2, 6, 23, 0.68), rgba(2, 6, 23, 0.1) 45%, rgba(2, 6, 23, 0));
+            pointer-events: none;
+        }
+
+        .episode-number-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: fit-content;
+            max-width: max-content;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 0.55rem;
+            padding: 0.32rem 0.65rem;
+            font-size: 0.8rem;
+            letter-spacing: 0.03em;
+            font-weight: 700;
+            line-height: 1.1;
+            white-space: nowrap;
+            color: #fff;
+            background: rgba(220, 38, 38, 0.85);
+            box-shadow: 0 0.3rem 0.8rem rgba(220, 38, 38, 0.22);
+        }
+
+        .episode-card .card-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+            padding: 1rem;
+        }
+
+        .episode-top-row {
+            background: rgba(15, 23, 42, 0.45);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            border-radius: 0.75rem;
+            padding: 0.55rem 0.7rem;
+        }
+
+        .episode-select-row {
+            min-height: 2rem;
+        }
+
+        .episode-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            width: 100%;
+        }
+
+        .episode-actions > .btn,
+        .episode-actions > form {
+            flex: 1 1 0;
+            min-width: 8.25rem;
+        }
+
+        .episode-actions > form .btn {
+            width: 100%;
+        }
+
+        .episode-actions .btn {
+            border-radius: 0.55rem;
+            font-weight: 500;
+            padding-inline: 0.75rem;
+        }
+
+        .episode-title {
+            font-weight: 700;
+            line-height: 1.35;
+            color: #f8fafc;
+            word-break: break-word;
+        }
+
+        .episode-card-status {
+            font-size: 0.95rem;
+            line-height: 1.25rem;
+        }
+
         @media (max-height: 760px) {
             #videoPlayerModal .modal-content {
                 height: 100vh;
@@ -69,19 +163,37 @@
                 padding: 0.8rem;
             }
 
+            .episode-top-row {
+                padding: 0.5rem 0.6rem;
+            }
+
             .episode-card .episode-title {
                 font-size: 0.95rem;
                 line-height: 1.25rem;
-            }
-
-            .episode-card .episode-actions {
-                gap: 0.4rem;
             }
 
             .episode-card .episode-actions .btn {
                 font-size: 0.8rem;
                 line-height: 1.15;
                 padding: 0.3rem 0.55rem;
+            }
+
+            .episode-number-badge {
+                font-size: 0.74rem;
+                padding: 0.32rem 0.58rem;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .episode-card .episode-actions > .btn,
+            .episode-card .episode-actions > form {
+                width: 100%;
+                min-width: 0;
+                flex: 1 1 100%;
+            }
+
+            .episode-card .episode-actions > form .btn {
+                width: 100%;
             }
         }
     </style>
@@ -243,8 +355,8 @@
                 @endphp
 
                 <div class="col">
-                    <article class="card h-100 border-0 shadow-sm bg-dark text-light episode-card">
-                        <div class="ratio ratio-16x9 bg-black position-relative">
+                    <article class="card h-100 border-0 shadow-sm text-light episode-card">
+                        <div class="ratio ratio-16x9 bg-black position-relative episode-cover">
                             @if ($seriesInfo->cover_image_url)
                                 <img
                                     src="{{ $seriesInfo->cover_image_url }}"
@@ -257,29 +369,34 @@
                             @endif
 
                             @if ($episode->episode_number)
-                                <span class="badge position-absolute top-0 start-0 m-2 px-3 py-2">
-                                    <div class="bg-danger p-2">Épisode {{ $episode->episode_number }}</div>
+                                <span class="position-absolute top-0 start-0 m-2 episode-number-badge">
+                                    Épisode {{ $episode->episode_number }}
                                 </span>
                             @endif
                         </div>
 
                         <div class="card-body">
-                            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start gap-2 mb-2">
-                                <div class="form-check">
-                                    <input
-                                        class="form-check-input episode-checkbox"
-                                        type="checkbox"
-                                        name="episode_ids[]"
-                                        value="{{ $episode->id }}"
-                                        form="bulkDeleteEpisodesForm"
-                                        id="episode-{{ $episode->id }}"
-                                        data-episode-title="{{ $episode->title }}"
-                                        data-download-url="{{ $playableUrl ? route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) : '' }}"
-                                    >
-                                    <label class="form-check-label small text-secondary episode-select-label" for="episode-{{ $episode->id }}">Sélectionner</label>
+                            <div class="episode-top-row">
+                                <div class="d-flex align-items-center justify-content-between gap-2 mb-2 episode-select-row">
+                                    <div class="form-check mb-0">
+                                        <input
+                                            class="form-check-input episode-checkbox"
+                                            type="checkbox"
+                                            name="episode_ids[]"
+                                            value="{{ $episode->id }}"
+                                            form="bulkDeleteEpisodesForm"
+                                            id="episode-{{ $episode->id }}"
+                                            data-episode-title="{{ $episode->title }}"
+                                            data-download-url="{{ $playableUrl ? route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) : '' }}"
+                                        >
+                                        <label class="form-check-label small text-secondary episode-select-label" for="episode-{{ $episode->id }}">Sélectionner</label>
+                                    </div>
+                                    @if ($episodeCompleted)
+                                        <span class="badge text-bg-success">Terminé</span>
+                                    @endif
                                 </div>
 
-                                <div class="d-flex flex-wrap justify-content-end episode-actions">
+                                <div class="episode-actions">
                                     @if ($playableUrl)
                                         <button
                                             type="button"
@@ -312,13 +429,10 @@
                                 </div>
                             </div>
 
-                            <div class="d-flex align-items-center gap-2 mb-2">
+                            <div class="d-flex align-items-center gap-2">
                                 <h3 class="h6 card-title mb-0 episode-title">{{ $episode->title }}</h3>
-                                @if ($episodeCompleted)
-                                    <span class="badge text-bg-success">Terminé</span>
-                                @endif
                             </div>
-                            <p class="small mb-0 {{ $playableUrl ? 'text-info' : 'text-secondary' }}">
+                            <p class="mb-0 episode-card-status {{ $playableUrl ? 'text-info' : 'text-secondary' }}">
                                 @if ($playableUrl)
                                     Lire ou télécharger maintenant
                                 @elseif (in_array($episode->status, [\App\Models\Episode::STATUS_PENDING, \App\Models\Episode::STATUS_IN_PROGRESS], true))
