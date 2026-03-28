@@ -8,6 +8,7 @@ use App\Models\SeriesInfo;
 use App\Services\Scraper\BrowserClickService;
 use App\Services\Scraper\EpisodeListScraper;
 use App\Services\Scraper\EpisodePageScraper;
+use App\Services\Scraper\ScraperSecurityService;
 use App\Services\Scraper\SeriesInfoScraper;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -114,11 +115,11 @@ class ScrapeEpisodesCommand extends Command
         $episodeIndex = 0;
 
         foreach ($episodeQuery->lazyById(100) as $episode) {
-            // Délai anti-rate-limit entre chaque épisode (sauf le premier).
+            // Couche 4 : Délai aléatoire anti-rate-limit entre chaque épisode (sauf le premier).
             // vdesk.live bloque les requêtes trop rapprochées et renvoie une page
             // d'erreur (~13 056 o) sans l'URL vidéo.
             if ($episodeIndex > 0) {
-                usleep(1_200_000); // 1,2 s
+                ScraperSecurityService::randomDelay(1000, 2500);
             }
             $episodeIndex++;
 

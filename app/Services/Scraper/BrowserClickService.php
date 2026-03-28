@@ -75,21 +75,27 @@ class BrowserClickService
                 'has_eval'        => str_contains($html, 'eval(function(p,a,c,k,e,d)'),
             ]);
 
-            // Si la réponse est trop petite, vdesk a renvoyé une page de rate-limit.
-            // On retente jusqu'à 3 fois avec délai croissant.
-            if ($htmlLen < self::VDESK_MIN_VALID_HTML) {
-                $retryDelays = [5_000_000, 10_000_000, 15_000_000]; // 5s, 10s, 15s
+            // Couche 6 : Détection rate-limit + backoff exponentiel.
+            // Si la réponse est trop petite OU ressemble à une page de blocage,
+            // on retente avec un délai croissant (backoff exponentiel).
+            $maxRetries = 3;
+            if ($htmlLen < self::VDESK_MIN_VALID_HTML || ScraperSecurityService::looksLikeBlockPage($html)) {
                 $retried = false;
 
-                foreach ($retryDelays as $attempt => $delay) {
-                    $delaySec = $delay / 1_000_000;
-                    Log::warning("BrowserClick: HTML trop petit ({$htmlLen} o < " . self::VDESK_MIN_VALID_HTML . ' o), retry #' . ($attempt + 1) . " dans {$delaySec}s.", [
+                for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+                    $delaySec = ScraperSecurityService::exponentialBackoff($attempt, 5);
+                    $reason   = $htmlLen < self::VDESK_MIN_VALID_HTML
+                        ? "HTML trop petit ({$htmlLen} o < " . self::VDESK_MIN_VALID_HTML . ' o)'
+                        : 'page de blocage détectée';
+
+                    Log::warning("BrowserClick: {$reason}, retry #{$attempt} dans {$delaySec}s (backoff).", [
                         'html_length' => $htmlLen,
+                        'is_block'    => ScraperSecurityService::looksLikeBlockPage($html),
                     ]);
 
-                    usleep($delay);
+                    sleep($delaySec);
 
-                    // Nouvelle session (cookies propres)
+                    // Nouvelle session (cookies propres + nouveaux headers aléatoires)
                     $jarN = new CookieJar();
                     $responseN = $this->client($referer, $jarN)->get($iframeUrl)->throw();
                     $html       = $responseN->body();
@@ -98,19 +104,19 @@ class BrowserClickService
                     $htmlLen = mb_strlen($html);
                     $jar = $jarN;
 
-                    Log::info('BrowserClick: après retry method_free #' . ($attempt + 1) . '.', [
+                    Log::info('BrowserClick: après retry method_free #' . $attempt . '.', [
                         'html_length' => $htmlLen,
                         'has_eval'    => str_contains($html, 'eval(function(p,a,c,k,e,d)'),
                     ]);
 
-                    if ($htmlLen >= self::VDESK_MIN_VALID_HTML) {
+                    if ($htmlLen >= self::VDESK_MIN_VALID_HTML && ! ScraperSecurityService::looksLikeBlockPage($html)) {
                         $retried = true;
                         break;
                     }
                 }
 
                 if (! $retried) {
-                    Log::warning('BrowserClick: rate-limit persistant après ' . count($retryDelays) . ' tentatives.', [
+                    Log::warning('BrowserClick: rate-limit/blocage persistant après ' . $maxRetries . ' tentatives.', [
                         'html_length' => $htmlLen,
                     ]);
                 }
@@ -150,7 +156,7 @@ class BrowserClickService
             }
 
             // ── Stratégie D : formulaire #downloadbtn (redirect 302 → URL finale) ───────
-            usleep(800_000);
+            ScraperSecurityService::randomDelay(600, 1500);
 
             $finalUrl = $this->submitFinalStep($html, $currentUrl, 'downloadbtn', $jar);
             if ($finalUrl !== null) {

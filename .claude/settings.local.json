@@ -11,7 +11,10 @@
       "Bash(curl -s -o /dev/null -w \"vdesk: HTTP %{http_code}, Content-Type: %{content_type}, Size: %{size_download}\\\\n\" -L -k --max-time 10 -H \"User-Agent: Mozilla/5.0\" -H \"Referer: https://vdesk.live/\" -r 0-0 \"https://s3.vdesk.live:8080/files/0/n869vrgskecgz0/video.mp4\")",
       "Bash(__NEW_LINE_b13aaee3c2f7e25e__ curl:*)",
       "Bash(php -l app/Console/Commands/ScrapeEpisodesCommand.php)",
-      "Bash(php -l app/Http/Controllers/SeriesInfoController.php)"
+      "Bash(php -l app/Http/Controllers/SeriesInfoController.php)",
+      "Bash(php -l app/Services/Scraper/ScraperSecurityService.php)",
+      "Bash(php -l app/Services/Scraper/BrowserClickService.php)",
+      "Bash(php -l app/Services/Scraper/HtmlFetcher.php)"
     ]
   }
 }
