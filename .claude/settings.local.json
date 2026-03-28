@@ -14,7 +14,9 @@
       "Bash(php -l app/Http/Controllers/SeriesInfoController.php)",
       "Bash(php -l app/Services/Scraper/ScraperSecurityService.php)",
       "Bash(php -l app/Services/Scraper/BrowserClickService.php)",
-      "Bash(php -l app/Services/Scraper/HtmlFetcher.php)"
+      "Bash(php -l app/Services/Scraper/HtmlFetcher.php)",
+      "Bash(find /d/laragon/www/esma-serie-app -name *ScrapeEpisodes* -type f)",
+      "Bash(php -l app/Jobs/RunScrapeEpisodesJob.php)"
     ]
   }
 }

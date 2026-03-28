@@ -119,7 +119,7 @@ class ScrapeEpisodesCommand extends Command
             // vdesk.live bloque les requêtes trop rapprochées et renvoie une page
             // d'erreur (~13 056 o) sans l'URL vidéo.
             if ($episodeIndex > 0) {
-                ScraperSecurityService::randomDelay(1000, 2500);
+                ScraperSecurityService::randomDelay(500, 1200);
             }
             $episodeIndex++;
 
@@ -302,7 +302,7 @@ class ScrapeEpisodesCommand extends Command
             $brokenCount++;
 
             // Petit délai pour ne pas surcharger les CDNs
-            usleep(300_000); // 300ms
+            usleep(150_000); // 150ms
         }
 
         Log::info('🔍 Fin vérification URLs.', [
@@ -326,11 +326,63 @@ class ScrapeEpisodesCommand extends Command
         try {
             $episodes = $this->listScraper->scrape($listUrl);
 
+            $rawStart     = $this->option('episode-start');
+            $rawEnd       = $this->option('episode-end');
+            $episodeStart = ($rawStart !== null && $rawStart !== '') ? (int) $rawStart : null;
+            $episodeEnd   = ($rawEnd !== null && $rawEnd !== '') ? (int) $rawEnd : null;
+
+            // ── 1. Filtrer par plage AVANT toute écriture en base
+            $allEpisodes = $episodes; // Garde tous pour trouver la page série
+            if ($episodeStart !== null || $episodeEnd !== null) {
+                $beforeCount = count($episodes);
+
+                $episodes = array_values(array_filter($episodes, function (array $ep) use ($episodeStart, $episodeEnd): bool {
+                    $num = $ep['episode_number'] ?? null;
+                    if ($num === null) {
+                        return false;
+                    }
+                    if ($episodeStart !== null && $num < $episodeStart) {
+                        return false;
+                    }
+                    if ($episodeEnd !== null && $num > $episodeEnd) {
+                        return false;
+                    }
+                    return true;
+                }));
+
+                Log::info('📋 Filtrage épisodes par plage AVANT insertion.', [
+                    'episode_start' => $episodeStart,
+                    'episode_end'   => $episodeEnd,
+                    'before_count'  => $beforeCount,
+                    'after_count'   => count($episodes),
+                ]);
+
+                $this->info(sprintf('Plage %d-%d : %d épisodes retenus sur %d détectés.',
+                    $episodeStart ?? 1,
+                    $episodeEnd ?? 9999,
+                    count($episodes),
+                    $beforeCount,
+                ));
+
+                if (count($episodes) === 0) {
+                    Log::warning('⚠️ Aucun épisode dans la plage demandée.', [
+                        'episode_start' => $episodeStart,
+                        'episode_end'   => $episodeEnd,
+                        'total_scraped' => $beforeCount,
+                    ]);
+                    $this->warn('Aucun épisode dans la plage demandée. Vérifiez les numéros disponibles.');
+                }
+            }
+
+            // ── 2. Insérer les épisodes filtrés en base
             $this->upsertEpisodes($episodes);
 
-            $this->syncSeriesInfoFromEpisodes($episodes);
+            // ── 3. Sync série APRÈS insertion
+            //   - $allEpisodes[0] sert à trouver la page série (même si ep1 est hors plage)
+            //   - On ne lie que les épisodes réellement insérés ($episodes filtrés)
+            $this->syncSeriesInfoFromEpisodes($allEpisodes, $episodes);
 
-            $this->info(sprintf('Épisodes détectés: %d', count($episodes)));
+            $this->info(sprintf('Épisodes insérés: %d', count($episodes)));
         } catch (\Throwable $e) {
             $this->lastError = $e->getMessage();
 
@@ -366,8 +418,18 @@ class ScrapeEpisodesCommand extends Command
             }
         }
 
-        $episodeStart = $this->option('episode-start') !== null ? (int) $this->option('episode-start') : null;
-        $episodeEnd = $this->option('episode-end') !== null ? (int) $this->option('episode-end') : null;
+        $rawStart = $this->option('episode-start');
+        $rawEnd   = $this->option('episode-end');
+
+        $episodeStart = ($rawStart !== null && $rawStart !== '') ? (int) $rawStart : null;
+        $episodeEnd   = ($rawEnd !== null && $rawEnd !== '') ? (int) $rawEnd : null;
+
+        Log::info('📋 episodeQuery: filtre épisode-start / épisode-end.', [
+            'raw_start'    => $rawStart,
+            'raw_end'      => $rawEnd,
+            'parsed_start' => $episodeStart,
+            'parsed_end'   => $episodeEnd,
+        ]);
 
         if ($episodeStart !== null) {
             $query->whereNotNull('episode_number')
@@ -379,22 +441,32 @@ class ScrapeEpisodesCommand extends Command
                 ->where('episode_number', '<=', $episodeEnd);
         }
 
+        Log::info('📋 episodeQuery: SQL final.', [
+            'sql'      => $query->toRawSql(),
+        ]);
+
         return $query;
     }
 
     /**
-     * @param array<int, array{title:string,page_url:string,episode_number:?int,image_url:?string}> $episodes
+     * @param array<int, array{title:string,page_url:string,episode_number:?int,image_url:?string}> $allEpisodes
+     *        Tous les épisodes scrapés (sert à trouver la page série même si l'ep 1 est hors plage)
+     * @param array<int, array{title:string,page_url:string,episode_number:?int,image_url:?string}>|null $episodesToLink
+     *        Épisodes à lier à la série en base (null = utiliser $allEpisodes)
      */
-    private function syncSeriesInfoFromEpisodes(array $episodes): void
+    private function syncSeriesInfoFromEpisodes(array $allEpisodes, ?array $episodesToLink = null): void
     {
-        if ($episodes === []) {
+        if ($allEpisodes === []) {
             return;
         }
 
-        $firstEpisodeUrl = (string) ($episodes[0]['page_url'] ?? '');
+        $firstEpisodeUrl = (string) ($allEpisodes[0]['page_url'] ?? '');
         if ($firstEpisodeUrl === '') {
             return;
         }
+
+        // Les épisodes à lier = ceux filtrés si fournis, sinon tous
+        $episodesToLink ??= $allEpisodes;
 
         try {
             $seriesInfo = $this->seriesInfoScraper->scrapeFromEpisodeUrl($firstEpisodeUrl);
@@ -416,7 +488,8 @@ class ScrapeEpisodesCommand extends Command
             $this->trackedSeriesInfoTitle = $seriesInfoModel->title;
             $this->updateTrackingStatus('running', 'Fiche série créée. Récupération des épisodes en cours...');
 
-            $episodeUrls = collect($episodes)
+            // Lier seulement les épisodes insérés (filtrés) à la série
+            $episodeUrls = collect($episodesToLink)
                 ->pluck('page_url')
                 ->filter(fn (?string $pageUrl): bool => $pageUrl !== null && $pageUrl !== '')
                 ->values();
@@ -767,28 +840,30 @@ class ScrapeEpisodesCommand extends Command
                 'retry_count' => $server->retry_count + 1,
             ]);
         } finally {
-            $freshServer = $server->fresh();
-
+            // Pas de fresh() — $server est déjà à jour après forceFill()->save()
             Log::info('── Fin serveur.', [
                 'server_id'     => $server->id,
                 'host'          => $server->host,
-                'status'        => $freshServer?->status,
-                'final_url'     => $freshServer?->final_url ? mb_substr($freshServer->final_url, 0, 80) . '...' : null,
-                'retry_count'   => $freshServer?->retry_count,
-                'error_message' => $freshServer?->error_message,
+                'status'        => $server->status,
+                'final_url'     => $server->final_url ? mb_substr($server->final_url, 0, 80) . '...' : null,
+                'retry_count'   => $server->retry_count,
+                'error_message' => $server->error_message,
             ]);
         }
     }
 
     private function refreshEpisodeStatus(Episode $episode): void
     {
-        $states = $episode->servers()
-            ->selectRaw('status, count(*) as aggregate')
-            ->groupBy('status')
-            ->pluck('aggregate', 'status');
+        // Une seule requête : on récupère tous les champs nécessaires,
+        // et on calcule les compteurs en PHP — plus de double SELECT.
+        $servers = $episode->servers()
+            ->select('id', 'host', 'status', 'final_url', 'error_message')
+            ->get();
 
-        $totalServers = (int) $states->sum();
-        $doneServers = (int) ($states[EpisodeServer::STATUS_DONE] ?? 0);
+        $states = $servers->countBy('status');
+
+        $totalServers = $servers->count();
+        $doneServers  = (int) ($states[EpisodeServer::STATUS_DONE] ?? 0);
 
         if ($doneServers > 0 && $doneServers === $totalServers) {
             $status = Episode::STATUS_DONE;
@@ -798,11 +873,8 @@ class ScrapeEpisodesCommand extends Command
             $status = Episode::STATUS_IN_PROGRESS;
         }
 
-        // Résumé détaillé par serveur pour cet épisode
-        $serverDetails = $episode->servers()
-            ->select('id', 'host', 'status', 'final_url', 'error_message')
-            ->get()
-            ->map(fn ($s) => [
+        // Résumé détaillé (déjà chargé ci-dessus — pas de requête supplémentaire)
+        $serverDetails = $servers->map(fn ($s) => [
                 'id'     => $s->id,
                 'host'   => $s->host,
                 'status' => $s->status,

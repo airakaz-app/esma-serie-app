@@ -146,21 +146,31 @@ class ScraperSecurityService
     }
 
     /**
-     * Détecte si une réponse HTML est une page d'erreur/blocage
+     * Détecte si une réponse HTML est une page d'erreur/blocage.
+     *
+     * On utilise des patterns précis (phrases complètes ou balises spécifiques)
+     * pour éviter les faux positifs sur du contenu légitime (ex: <meta name="robots">).
      */
     public static function looksLikeBlockPage(string $html): bool
     {
+        // Une vraie page de blocage est courte (< 50KB) et ne contient pas de contenu réel.
+        // Si la page est grande, c'est du vrai contenu.
+        if (mb_strlen($html) > 50_000) {
+            return false;
+        }
+
         $patterns = [
-            'cloudflare',
-            'challenge',
-            'robot',
-            'bot',
-            'automated',
-            'scraper',
-            'access denied',
-            'blocked',
-            'rate limit',
-            'too many requests',
+            'cloudflare ray id',           // Cloudflare block page signature
+            'cf-ray',                       // Cloudflare header dans HTML
+            'just a moment',                // Cloudflare challenge
+            'enable javascript and cookies',// Cloudflare challenge
+            'checking your browser',        // Cloudflare / anti-bot
+            'ddos protection by',           // DDoS protection
+            'access denied',                // Erreur accès
+            'rate limit exceeded',          // Rate limiting (phrase complète)
+            'too many requests',            // HTTP 429
+            'automated access',             // Anti-bot
+            'bot detection',                // Détection bot explicite
         ];
 
         $htmlLower = mb_strtolower($html);
