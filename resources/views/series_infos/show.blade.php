@@ -296,7 +296,19 @@
     <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-lg-down">
         <div class="modal-content bg-dark text-light border border-secondary-subtle">
             <div class="modal-header">
-                <h5 class="modal-title" id="videoPlayerModalLabel">Lecture vidéo</h5>
+                <div class="d-flex flex-column me-auto pe-3">
+                    <h5 class="modal-title mb-0" id="videoPlayerModalLabel">Lecture vidéo</h5>
+                    <p class="mb-0 mt-1 text-break d-none" id="videoPlayerUrlWrapper">
+                        <a
+                            id="videoPlayerUrlLink"
+                            href="#"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="link-info text-decoration-underline"
+                            style="font-size: 0.68rem;"
+                        ></a>
+                    </p>
+                </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
             </div>
             <div class="modal-body p-2 p-md-3 gap-2">
@@ -803,6 +815,14 @@
                 modalTitle.textContent = videoTitle;
             }
 
+            const videoPlayerUrlWrapper = document.getElementById('videoPlayerUrlWrapper');
+            const videoPlayerUrlLink = document.getElementById('videoPlayerUrlLink');
+            if (videoPlayerUrlWrapper && videoPlayerUrlLink) {
+                videoPlayerUrlLink.href = videoUrl;
+                videoPlayerUrlLink.textContent = videoUrl;
+                videoPlayerUrlWrapper.classList.remove('d-none');
+            }
+
             if (player === null) {
                 player = new Plyr(videoElement, {
                     controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
@@ -867,6 +887,14 @@
             videoElement.load();
             activeVideo = null;
             updateVideoStatus('');
+
+            const videoPlayerUrlWrapper = document.getElementById('videoPlayerUrlWrapper');
+            const videoPlayerUrlLink = document.getElementById('videoPlayerUrlLink');
+            if (videoPlayerUrlWrapper && videoPlayerUrlLink) {
+                videoPlayerUrlLink.href = '#';
+                videoPlayerUrlLink.textContent = '';
+                videoPlayerUrlWrapper.classList.add('d-none');
+            }
         });
 
         videoElement.addEventListener('ended', () => {
