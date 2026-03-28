@@ -22,12 +22,19 @@
 
         <div class="d-flex flex-wrap gap-2">
             <button type="button" id="openAddSeriesModal" class="btn btn-primary w-auto">Ajouter</button>
+            <button type="button" id="refreshAllEpisodesButton" class="btn btn-outline-info w-auto">
+                <span id="refreshAllEpisodesSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
+                Refresh épisodes
+            </button>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
                 <button type="submit" class="btn btn-outline-light w-auto">Déconnexion</button>
             </form>
         </div>
     </header>
+
+
+    <div id="refreshAllEpisodesFeedback" class="alert d-none mb-4"></div>
 
     <div id="globalScrapeProgress" class="alert alert-info d-none mb-4">
         <div class="d-flex justify-content-between small mb-2">
@@ -249,6 +256,59 @@
     const searchResults = document.getElementById('searchResults');
     const searchResultsList = document.getElementById('searchResultsList');
     const listPageUrlInput = document.getElementById('listPageUrl');
+
+    const refreshAllEpisodesButton = document.getElementById('refreshAllEpisodesButton');
+    const refreshAllEpisodesSpinner = document.getElementById('refreshAllEpisodesSpinner');
+    const refreshAllEpisodesFeedback = document.getElementById('refreshAllEpisodesFeedback');
+
+
+    const setRefreshFeedback = (message, type) => {
+        refreshAllEpisodesFeedback.className = `alert alert-${type} mb-4`;
+        refreshAllEpisodesFeedback.textContent = message;
+        refreshAllEpisodesFeedback.classList.remove('d-none');
+    };
+
+    refreshAllEpisodesButton.addEventListener('click', async () => {
+        refreshAllEpisodesButton.disabled = true;
+        refreshAllEpisodesSpinner.classList.remove('d-none');
+        refreshAllEpisodesFeedback.classList.add('d-none');
+
+        try {
+            const response = await fetch('{{ route('series-infos.refresh-all') }}', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                },
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.status === 'error') {
+                throw new Error(data.message ?? 'Erreur pendant la synchronisation.');
+            }
+
+            if (data.status === 'busy') {
+                setRefreshFeedback(data.message, 'warning');
+                return;
+            }
+
+            if (Number(data.new_episodes_count ?? 0) > 0) {
+                setRefreshFeedback(`✅ ${data.new_episodes_count} nouveau(x) épisode(s) importé(s).`, 'success');
+            } else {
+                setRefreshFeedback('Aucun nouvel épisode trouvé.', 'info');
+            }
+
+            window.setTimeout(() => {
+                window.location.reload();
+            }, 1200);
+        } catch (error) {
+            setRefreshFeedback(error.message, 'danger');
+        } finally {
+            refreshAllEpisodesButton.disabled = false;
+            refreshAllEpisodesSpinner.classList.add('d-none');
+        }
+    });
 
     const runSearch = async () => {
         const q = searchQueryInput.value.trim();
