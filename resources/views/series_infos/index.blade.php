@@ -9,7 +9,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-slate-950 text-slate-100">
-<div class="container py-4 py-lg-5">
+<div class="container py-4 py-lg-5 px-3 px-sm-4">
     @if (session('status'))
         <div class="alert alert-success mb-4">{{ session('status') }}</div>
     @endif
@@ -20,11 +20,11 @@
             <p class="text-secondary mb-0">Cliquez sur une carte pour afficher les épisodes liés.</p>
         </div>
 
-        <div class="d-flex flex-wrap gap-2">
-            <button type="button" id="openAddSeriesModal" class="btn btn-primary">Ajouter</button>
+        <div class="d-grid gap-2 d-sm-flex">
+            <button type="button" id="openAddSeriesModal" class="btn btn-primary w-100 w-sm-auto">Ajouter</button>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button type="submit" class="btn btn-outline-light">Déconnexion</button>
+                <button type="submit" class="btn btn-outline-light w-100 w-sm-auto">Déconnexion</button>
             </form>
         </div>
     </header>
@@ -42,7 +42,7 @@
     @if ($seriesInfos->isEmpty())
         <p class="rounded-3 border border-secondary-subtle bg-dark-subtle p-4 text-secondary">Aucune série trouvée.</p>
     @else
-        <div class="row g-4 row-cols-2 row-cols-lg-3 row-cols-xxl-4">
+        <div class="row g-3 g-md-4 row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xxl-4">
             @foreach ($seriesInfos as $seriesInfo)
                 @php
                     $categories = collect($seriesInfo->categories)
@@ -75,8 +75,8 @@
 
                             <div class="card-body d-flex flex-column gap-2">
                                 <div class="d-flex align-items-start justify-content-between gap-2">
-                                    <div class="position-relative pe-2">
-                                        <h2 class="h5 card-title mb-0">{{ $seriesInfo->title ?: 'Sans titre' }}</h2>
+                                    <div class="position-relative pe-2 overflow-hidden">
+                                        <h2 class="h5 card-title mb-0 text-truncate">{{ $seriesInfo->title ?: 'Sans titre' }}</h2>
                                         <a href="{{ route('series-infos.show', $seriesInfo) }}" class="stretched-link" aria-label="Voir la série {{ $seriesInfo->title ?: 'Sans titre' }}"></a>
                                     </div>
                                     <span class="badge text-bg-primary">{{ $seriesInfo->episodes_count }} épisode(s)</span>
@@ -128,16 +128,16 @@
 
             {{-- Recherche --}}
             <div>
-                <div class="input-group">
+                <div class="input-group flex-column flex-sm-row gap-2 gap-sm-0">
                     <input
                         type="text"
                         id="searchQuery"
-                        class="form-control bg-dark text-light border-secondary"
+                        class="form-control bg-dark text-light border-secondary w-100"
                         placeholder="Chercher par nom de série..."
                         autocomplete="off"
                         dir="auto"
                     >
-                    <button type="button" id="searchBtn" class="btn btn-outline-light">
+                    <button type="button" id="searchBtn" class="btn btn-outline-light w-100 w-sm-auto">
                         <span id="searchSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
                         Rechercher
                     </button>
@@ -235,7 +235,7 @@
 
             data.results.forEach(item => {
                 const card = document.createElement('div');
-                card.className = 'd-flex align-items-center gap-3 p-2 rounded border border-secondary bg-black bg-opacity-25';
+                card.className = 'd-flex flex-column flex-sm-row align-items-start align-items-sm-center gap-3 p-2 rounded border border-secondary bg-black bg-opacity-25';
 
                 const img = item.image
                     ? `<img src="${item.image}" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:4px;flex-shrink:0;" loading="lazy">`
@@ -243,11 +243,11 @@
 
                 card.innerHTML = `
                     ${img}
-                    <div class="flex-grow-1 overflow-hidden">
+                    <div class="flex-grow-1 overflow-hidden w-100">
                         <div class="fw-semibold text-truncate" dir="auto">${item.title}</div>
                         <div class="small text-secondary text-truncate">${item.url}</div>
                     </div>
-                    <button type="button" class="btn btn-sm btn-success flex-shrink-0">Ajouter</button>
+                    <button type="button" class="btn btn-sm btn-success flex-shrink-0 w-100 w-sm-auto">Ajouter</button>
                 `;
 
                 card.querySelector('button').addEventListener('click', () => {
