@@ -10,8 +10,6 @@ use Symfony\Component\DomCrawler\Crawler;
 
 class BrowserClickService
 {
-    private const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-
     private const DOWNLOAD_EXTENSIONS = ['mp4', 'm3u8', 'mkv', 'avi', 'mov', 'webm', 'ts'];
 
     public function __construct(private readonly Factory $http) {}
@@ -305,18 +303,29 @@ class BrowserClickService
      */
     private function doVerifyRequest(string $url, string $referer): array
     {
+        $headers = ScraperSecurityService::realisticHeaders($referer);
+        $headers['Range'] = 'bytes=0-0';
+        $headers['Origin'] = preg_replace('#^(https?://[^/]+).*#', '$1', $referer);
+
+        $options = [
+            'verify'          => false,
+            'allow_redirects' => ['max' => 5, 'track_redirects' => true],
+        ];
+
+        // Ajouter le proxy si configuré
+        $proxy = ScraperSecurityService::proxyConfig();
+        if ($proxy !== null) {
+            $proxyUrl = "http://{$proxy['host']}:{$proxy['port']}";
+            if ($proxy['auth'] !== null) {
+                $proxyUrl = "http://{$proxy['auth']}@{$proxy['host']}:{$proxy['port']}";
+            }
+            $options['proxy'] = $proxyUrl;
+        }
+
         try {
             $response = $this->http
-                ->withHeaders([
-                    'User-Agent' => self::USER_AGENT,
-                    'Referer'    => $referer,
-                    'Origin'     => preg_replace('#^(https?://[^/]+).*#', '$1', $referer),
-                    'Range'      => 'bytes=0-0',
-                ])
-                ->withOptions([
-                    'verify'          => false,
-                    'allow_redirects' => ['max' => 5, 'track_redirects' => true],
-                ])
+                ->withHeaders($headers)
+                ->withOptions($options)
                 ->timeout(10)
                 ->head($url);
 
@@ -326,16 +335,8 @@ class BrowserClickService
             // Si HEAD retourne 405 (Method Not Allowed), retenter avec GET + Range
             if ($status === 405) {
                 $response = $this->http
-                    ->withHeaders([
-                        'User-Agent' => self::USER_AGENT,
-                        'Referer'    => $referer,
-                        'Origin'     => preg_replace('#^(https?://[^/]+).*#', '$1', $referer),
-                        'Range'      => 'bytes=0-0',
-                    ])
-                    ->withOptions([
-                        'verify'          => false,
-                        'allow_redirects' => ['max' => 5, 'track_redirects' => true],
-                    ])
+                    ->withHeaders($headers)
+                    ->withOptions($options)
                     ->timeout(10)
                     ->get($url);
 
@@ -511,6 +512,9 @@ class BrowserClickService
         }
 
         try {
+            // Délai aléatoire avant la requête (imiter comportement humain)
+            ScraperSecurityService::randomDelay(800, 2000);
+
             // Soumettre SANS suivre les redirects pour capturer Location
             $client = $this->clientNoRedirect($currentUrl, $jar);
             $response = $formStep['method'] === 'POST'
@@ -786,6 +790,9 @@ class BrowserClickService
      */
     private function submitStep(array $step, string $referer, CookieJar $jar): \Illuminate\Http\Client\Response
     {
+        // Délai aléatoire avant la requête (imiter comportement humain)
+        ScraperSecurityService::randomDelay(600, 1500);
+
         $client = $this->client($referer, $jar);
 
         return $step['method'] === 'POST'
@@ -798,21 +805,27 @@ class BrowserClickService
      */
     private function client(string $referer, CookieJar $jar): PendingRequest
     {
+        $options = [
+            'cookies'         => $jar,
+            'allow_redirects' => ['max' => 10, 'track_redirects' => true],
+            'verify'          => false,
+            'decode_content'  => false,
+            'curl'            => [CURLOPT_ENCODING => 'gzip, deflate'],
+        ];
+
+        // Ajouter le proxy si configuré
+        $proxy = ScraperSecurityService::proxyConfig();
+        if ($proxy !== null) {
+            $proxyUrl = "http://{$proxy['host']}:{$proxy['port']}";
+            if ($proxy['auth'] !== null) {
+                $proxyUrl = "http://{$proxy['auth']}@{$proxy['host']}:{$proxy['port']}";
+            }
+            $options['proxy'] = $proxyUrl;
+        }
+
         return $this->http
-            ->withHeaders([
-                'User-Agent'                => self::USER_AGENT,
-                'Accept'                    => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language'           => 'ar,fr-FR;q=0.9,en-US;q=0.8',
-                'Referer'                   => $referer,
-                'Upgrade-Insecure-Requests' => '1',
-            ])
-            ->withOptions([
-                'cookies'         => $jar,
-                'allow_redirects' => ['max' => 10, 'track_redirects' => true],
-                'verify'          => false,
-                'decode_content'  => false,
-                'curl'            => [CURLOPT_ENCODING => 'gzip, deflate'],
-            ])
+            ->withHeaders(ScraperSecurityService::realisticHeaders($referer))
+            ->withOptions($options)
             ->timeout((int) config('scraper.http_timeout', 20));
     }
 
@@ -821,21 +834,27 @@ class BrowserClickService
      */
     private function clientNoRedirect(string $referer, CookieJar $jar): PendingRequest
     {
+        $options = [
+            'cookies'         => $jar,
+            'allow_redirects' => false,
+            'verify'          => false,
+            'decode_content'  => false,
+            'curl'            => [CURLOPT_ENCODING => 'gzip, deflate'],
+        ];
+
+        // Ajouter le proxy si configuré
+        $proxy = ScraperSecurityService::proxyConfig();
+        if ($proxy !== null) {
+            $proxyUrl = "http://{$proxy['host']}:{$proxy['port']}";
+            if ($proxy['auth'] !== null) {
+                $proxyUrl = "http://{$proxy['auth']}@{$proxy['host']}:{$proxy['port']}";
+            }
+            $options['proxy'] = $proxyUrl;
+        }
+
         return $this->http
-            ->withHeaders([
-                'User-Agent'                => self::USER_AGENT,
-                'Accept'                    => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language'           => 'ar,fr-FR;q=0.9,en-US;q=0.8',
-                'Referer'                   => $referer,
-                'Upgrade-Insecure-Requests' => '1',
-            ])
-            ->withOptions([
-                'cookies'         => $jar,
-                'allow_redirects' => false,
-                'verify'          => false,
-                'decode_content'  => false,
-                'curl'            => [CURLOPT_ENCODING => 'gzip, deflate'],
-            ])
+            ->withHeaders(ScraperSecurityService::realisticHeaders($referer))
+            ->withOptions($options)
             ->timeout((int) config('scraper.http_timeout', 20));
     }
 

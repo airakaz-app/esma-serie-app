@@ -154,32 +154,164 @@ class ScrapeEpisodesCommand extends Command
 
     private function resetErrorServersForSeries(int $seriesInfoId): void
     {
-        $this->info("Retry mode : reset des serveurs en erreur pour la série #{$seriesInfoId}.");
-        $this->updateTrackingStatus('running', 'Réinitialisation des serveurs en erreur...');
+        $this->info("Retry mode : reset des serveurs pour la série #{$seriesInfoId}.");
+        $this->updateTrackingStatus('running', 'Réinitialisation des serveurs...');
 
-        // Remet les serveurs en erreur à pending pour qu'ils soient retraités
-        $updated = EpisodeServer::query()
+        // ── 1. Reset serveurs en erreur → pending ──
+        $resetErrors = EpisodeServer::query()
             ->whereHas('episode', fn (Builder $q) => $q->where('series_info_id', $seriesInfoId))
             ->where('status', EpisodeServer::STATUS_ERROR)
             ->update([
-                'status'     => EpisodeServer::STATUS_PENDING,
-                'retry_count' => 0,
+                'status'        => EpisodeServer::STATUS_PENDING,
+                'retry_count'   => 0,
                 'error_message' => null,
             ]);
 
-        // Remet aussi les épisodes en erreur à pending
-        Episode::query()
-            ->where('series_info_id', $seriesInfoId)
-            ->where('status', Episode::STATUS_ERROR)
-            ->update(['status' => Episode::STATUS_PENDING, 'error_message' => null]);
-
-        Log::info('Serveurs en erreur réinitialisés.', [
+        Log::info('🔄 Serveurs ERROR → PENDING.', [
             'series_info_id' => $seriesInfoId,
-            'servers_reset' => $updated,
+            'count'          => $resetErrors,
         ]);
 
-        $this->info("Serveurs réinitialisés : {$updated}");
-        $this->updateTrackingStatus('running', "Serveurs réinitialisés : {$updated}. Traitement en cours...");
+        // ── 2. Reset serveurs "done" mais sans final_url (lien manquant) ──
+        $resetNoUrl = EpisodeServer::query()
+            ->whereHas('episode', fn (Builder $q) => $q->where('series_info_id', $seriesInfoId))
+            ->where('status', EpisodeServer::STATUS_DONE)
+            ->where(fn (Builder $q) => $q->whereNull('final_url')->orWhere('final_url', ''))
+            ->update([
+                'status'        => EpisodeServer::STATUS_PENDING,
+                'retry_count'   => 0,
+                'error_message' => null,
+                'click_success' => false,
+            ]);
+
+        Log::info('🔄 Serveurs DONE sans URL → PENDING.', [
+            'series_info_id' => $seriesInfoId,
+            'count'          => $resetNoUrl,
+        ]);
+
+        // ── 3. Vérifier les URLs existantes (HEAD check) → reset si cassées ──
+        $resetBroken = $this->verifyAndResetBrokenUrls($seriesInfoId);
+
+        // ── 4. Reset épisodes sans serveur "done" → pending ──
+        Episode::query()
+            ->where('series_info_id', $seriesInfoId)
+            ->where('status', '!=', Episode::STATUS_PENDING)
+            ->whereDoesntHave('servers', fn (Builder $q) => $q->where('status', EpisodeServer::STATUS_DONE))
+            ->update(['status' => Episode::STATUS_PENDING, 'error_message' => null]);
+
+        $totalReset = $resetErrors + $resetNoUrl + $resetBroken;
+
+        Log::info('✅ Reset terminé.', [
+            'series_info_id' => $seriesInfoId,
+            'error_reset'    => $resetErrors,
+            'no_url_reset'   => $resetNoUrl,
+            'broken_reset'   => $resetBroken,
+            'total'          => $totalReset,
+        ]);
+
+        $this->info("Serveurs réinitialisés : {$totalReset} (erreurs: {$resetErrors}, sans URL: {$resetNoUrl}, URLs cassées: {$resetBroken})");
+        $this->updateTrackingStatus(
+            'running',
+            "Reset : {$resetErrors} erreurs, {$resetNoUrl} sans URL, {$resetBroken} URLs cassées. Traitement en cours...",
+            'info',
+        );
+    }
+
+    /**
+     * Vérifie par HEAD les URLs finales des serveurs "done" et remet en pending ceux qui sont cassés (404, 403…).
+     */
+    private function verifyAndResetBrokenUrls(int $seriesInfoId): int
+    {
+        $servers = EpisodeServer::query()
+            ->whereHas('episode', fn (Builder $q) => $q->where('series_info_id', $seriesInfoId))
+            ->where('status', EpisodeServer::STATUS_DONE)
+            ->whereNotNull('final_url')
+            ->where('final_url', '!=', '')
+            ->get(['id', 'episode_id', 'host', 'server_name', 'final_url', 'iframe_url']);
+
+        if ($servers->isEmpty()) {
+            return 0;
+        }
+
+        $this->updateTrackingStatus('running', "Vérification de {$servers->count()} URL(s) existantes...", 'info');
+        Log::info('🔍 Début vérification URLs existantes.', [
+            'series_info_id' => $seriesInfoId,
+            'count'          => $servers->count(),
+        ]);
+
+        $brokenCount = 0;
+
+        foreach ($servers as $server) {
+            $url = $server->final_url;
+
+            // Les URLs HLS avec token expirent par nature → toujours re-vérifier via re-scrape
+            $hasToken = str_contains($url, '?t=') || str_contains($url, '&t=') || str_contains($url, '?token=');
+            $isHls    = str_contains($url, '.m3u8');
+
+            if ($hasToken || $isHls) {
+                // Token/HLS : on ne peut pas vérifier par HEAD (token usage unique)
+                // On les considère comme potentiellement expirés → re-scrape
+                Log::info('🔄 URL HLS/token potentiellement expirée, re-scrape.', [
+                    'server_id' => $server->id,
+                    'host'      => $server->host,
+                    'url'       => mb_substr($url, 0, 80),
+                ]);
+
+                $server->forceFill([
+                    'status'        => EpisodeServer::STATUS_PENDING,
+                    'final_url'     => null,
+                    'click_success' => false,
+                    'retry_count'   => 0,
+                    'error_message' => 'URL HLS/token expirée, re-scrape automatique.',
+                ])->save();
+
+                $brokenCount++;
+                continue;
+            }
+
+            // URLs MP4 directes → vérification HTTP HEAD
+            $result = $this->browser->verifyVideoUrl($url, $server->iframe_url);
+
+            if ($result['accessible']) {
+                Log::info('✅ URL vérifiée OK.', [
+                    'server_id'   => $server->id,
+                    'host'        => $server->host,
+                    'http_status' => $result['status'],
+                ]);
+                continue;
+            }
+
+            // URL cassée → reset
+            Log::warning('❌ URL cassée détectée.', [
+                'server_id'   => $server->id,
+                'host'        => $server->host,
+                'url'         => mb_substr($url, 0, 80),
+                'http_status' => $result['status'],
+                'error'       => $result['error'],
+            ]);
+
+            $server->forceFill([
+                'status'        => EpisodeServer::STATUS_PENDING,
+                'final_url'     => null,
+                'click_success' => false,
+                'retry_count'   => 0,
+                'error_message' => "URL cassée (HTTP {$result['status']}), re-scrape automatique.",
+            ])->save();
+
+            $brokenCount++;
+
+            // Petit délai pour ne pas surcharger les CDNs
+            usleep(300_000); // 300ms
+        }
+
+        Log::info('🔍 Fin vérification URLs.', [
+            'series_info_id' => $seriesInfoId,
+            'checked'        => $servers->count(),
+            'broken'         => $brokenCount,
+            'ok'             => $servers->count() - $brokenCount,
+        ]);
+
+        return $brokenCount;
     }
 
     private function scanEpisodes(string $listUrl): void
@@ -214,10 +346,13 @@ class ScrapeEpisodesCommand extends Command
         if ($episodeId = $this->option('episode-id')) {
             $query->whereKey((int) $episodeId);
         } elseif ($seriesInfoId = $this->option('series-info-id')) {
-            // Mode retry : épisodes de cette série qui ne sont pas done
-            // (les erreurs ont été remises en pending par resetErrorServersForSeries)
+            // Mode retry : épisodes de cette série qui ont au moins un serveur pending
+            // (après resetErrorServersForSeries, les serveurs cassés/manquants ont été remis en pending)
             $query->where('series_info_id', (int) $seriesInfoId)
-                ->where('status', '!=', Episode::STATUS_DONE);
+                ->where(fn (Builder $q) => $q
+                    ->where('status', '!=', Episode::STATUS_DONE)
+                    ->orWhereHas('servers', fn (Builder $sq) => $sq->where('status', EpisodeServer::STATUS_PENDING))
+                );
         } else {
             $query->where('status', '!=', Episode::STATUS_DONE);
 

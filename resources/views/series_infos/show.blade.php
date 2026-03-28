@@ -452,7 +452,7 @@
 
         const setRefreshButtonState = (isLoading) => {
             refreshEpisodesButton.disabled = isLoading;
-            refreshEpisodesButton.textContent = isLoading ? 'Refresh en cours...' : 'Refresh épisodes';
+            refreshEpisodesButton.textContent = isLoading ? 'Vérification & retry en cours...' : 'Retry erreurs';
         };
 
         const startPolling = (trackingKey) => {
