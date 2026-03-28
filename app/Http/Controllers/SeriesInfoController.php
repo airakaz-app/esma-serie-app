@@ -7,6 +7,7 @@ use App\Http\Requests\DeleteEpisodesRequest;
 use App\Http\Requests\StoreEpisodeManualFinalUrlRequest;
 use App\Jobs\RunScrapeEpisodesJob;
 use App\Services\Episodes\EpisodeSyncService;
+use App\Services\Episodes\GlobalEpisodeRetryService;
 use App\Models\Episode;
 use App\Models\EpisodeServer;
 use App\Models\SeriesInfo;
@@ -281,6 +282,13 @@ class SeriesInfoController extends Controller
         set_time_limit(0);
 
         $result = $episodeSyncService->syncAllSeries('manual');
+
+        return response()->json($result, $result['status'] === 'error' ? 500 : 200);
+    }
+
+    public function retryAllErrors(GlobalEpisodeRetryService $retryService): JsonResponse
+    {
+        $result = $retryService->retryAllSeriesErrors();
 
         return response()->json($result, $result['status'] === 'error' ? 500 : 200);
     }

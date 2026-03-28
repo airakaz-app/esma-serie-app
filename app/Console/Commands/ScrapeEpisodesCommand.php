@@ -626,7 +626,11 @@ class ScrapeEpisodesCommand extends Command
                 'title' => (string) $episode['title'],
                 'episode_number' => $episode['episode_number'] ?? null,
                 'image_url' => $episode['image_url'] ?? null,
-                'is_new' => true,
+                // ⚠️ IMPORTANT: La gestion du tag "nouveau" est déléguée à EpisodeSyncService
+                // qui contrôle explicitement quand marquer les épisodes comme "nouveau".
+                // Ici (scrape initial ou retry): on n'utilise PAS le tag (reste false par défaut).
+                // Seule EpisodeSyncService (qui connait la différence import/update) le gère.
+                'is_new' => false,
                 'updated_at' => $now,
                 'created_at' => $now,
             ])

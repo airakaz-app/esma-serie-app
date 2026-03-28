@@ -26,6 +26,10 @@
                 <span id="refreshAllEpisodesSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
                 Refresh épisodes
             </button>
+            <button type="button" id="retryAllErrorsButton" class="btn btn-outline-warning w-auto">
+                <span id="retryAllErrorsSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
+                Retry erreurs
+            </button>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
                 <button type="submit" class="btn btn-outline-light w-auto">Déconnexion</button>
@@ -260,6 +264,8 @@
     const refreshAllEpisodesButton = document.getElementById('refreshAllEpisodesButton');
     const refreshAllEpisodesSpinner = document.getElementById('refreshAllEpisodesSpinner');
     const refreshAllEpisodesFeedback = document.getElementById('refreshAllEpisodesFeedback');
+    const retryAllErrorsButton = document.getElementById('retryAllErrorsButton');
+    const retryAllErrorsSpinner = document.getElementById('retryAllErrorsSpinner');
 
 
     const setRefreshFeedback = (message, type) => {
@@ -318,6 +324,55 @@
         } finally {
             refreshAllEpisodesButton.disabled = false;
             refreshAllEpisodesSpinner.classList.add('d-none');
+        }
+    });
+
+    // ── Event listener pour le bouton "Retry erreurs" ──
+    retryAllErrorsButton.addEventListener('click', async () => {
+        retryAllErrorsButton.disabled = true;
+        retryAllErrorsSpinner.classList.remove('d-none');
+        refreshAllEpisodesFeedback.classList.add('d-none');
+
+        try {
+            const response = await fetch('{{ route('series-infos.retry-all-errors') }}', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                },
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.status === 'error') {
+                throw new Error(data.message ?? 'Erreur pendant le retry.');
+            }
+
+            if (data.status === 'busy') {
+                setRefreshFeedback(data.message, 'warning');
+                return;
+            }
+
+            const jobsDispatched = Number(data.jobs_dispatched ?? 0);
+            const seriesWithErrors = Number(data.series_with_errors ?? 0);
+
+            if (data.status === 'completed_with_errors') {
+                const errorSummary = data.errors.slice(0, 3).join(' | ');
+                const moreSuffix = data.errors.length > 3 ? ` (+${data.errors.length - 3} autre(s))` : '';
+                setRefreshFeedback(`⚠️ ${jobsDispatched} job(s) lancé(s) mais avec erreurs : ${errorSummary}${moreSuffix}`, 'warning');
+            } else if (jobsDispatched > 0) {
+                setRefreshFeedback(`✅ Retry lancé pour ${jobsDispatched} série(s). Vérification des liens en cours...`, 'success');
+                window.setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                setRefreshFeedback('Aucune série avec épisodes problématiques trouvée.', 'info');
+            }
+        } catch (error) {
+            setRefreshFeedback(error.message, 'danger');
+        } finally {
+            retryAllErrorsButton.disabled = false;
+            retryAllErrorsSpinner.classList.add('d-none');
         }
     });
 

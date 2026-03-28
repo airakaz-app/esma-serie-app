@@ -131,9 +131,18 @@ class EpisodeSyncService
             return 0;
         }
 
-        $shouldTagAsNew = $existingEpisodesCount > 0;
+        // ── Logique du tag "nouveau" ─────────────────────────────────────────────────
+        // Règle : marquer "nouveau" UNIQUEMENT si la série existait déjà (mise à jour)
+        // ✅ Cas 1 : Série NEW (0 épisodes avant) → PAS de tag "nouveau"
+        // ✅ Cas 2 : Série EXISTANTE (N épisodes avant) → tag "nouveau" pour les nouveaux
+        // Cela permet de différencier :
+        //   - Import initial : tous les épisodes sont normaux
+        //   - Mise à jour    : seuls les nouveaux sont marqués "nouveau"
+        $isSeriesUpdate = $existingEpisodesCount > 0;
 
-        if ($shouldTagAsNew) {
+        if ($isSeriesUpdate) {
+            // Avant d'ajouter les nouveaux, réinitialiser le tag ancien sur les précédents
+            // (pour éviter d'avoir plusieurs vagues de "nouveau" qui s'accumulent)
             Episode::query()
                 ->where('series_info_id', $seriesInfo->id)
                 ->where('is_new', true)
@@ -154,7 +163,7 @@ class EpisodeSyncService
                 // via le bouton "Retry erreurs". Utiliser STATUS_DONE ici causait "Lien final
                 // indisponible" car episodeQuery() exclut les épisodes done sans final_url.
                 'status' => Episode::STATUS_PENDING,
-                'is_new' => $shouldTagAsNew,
+                'is_new' => $isSeriesUpdate,  // tag "nouveau" seulement si mise à jour d'une série existante
                 'created_at' => $now,
                 'updated_at' => $now,
             ])
