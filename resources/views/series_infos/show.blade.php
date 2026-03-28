@@ -429,8 +429,11 @@
                                 </div>
                             </div>
 
-                            <div class="d-flex align-items-center gap-2">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
                                 <h3 class="h6 card-title mb-0 episode-title">{{ $episode->title }}</h3>
+                                @if ($episode->is_new)
+                                    <span class="badge text-bg-warning">Nouveau</span>
+                                @endif
                             </div>
                             <p class="mb-0 episode-card-status {{ $playableUrl ? 'text-info' : 'text-secondary' }}">
                                 @if ($playableUrl)

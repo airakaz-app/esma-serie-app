@@ -22,6 +22,7 @@ class Episode extends Model
         'page_url',
         'episode_number',
         'image_url',
+        'is_new',
         'status',
         'error_message',
         'last_scraped_at',
@@ -32,6 +33,7 @@ class Episode extends Model
         return [
             'episode_number' => 'integer',
             'last_scraped_at' => 'datetime',
+            'is_new' => 'boolean',
         ];
     }
 

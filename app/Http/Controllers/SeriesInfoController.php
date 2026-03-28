@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ScrapeSeriesInfoRequest;
 use App\Http\Requests\DeleteEpisodesRequest;
 use App\Jobs\RunScrapeEpisodesJob;
+use App\Services\Episodes\EpisodeSyncService;
 use App\Models\Episode;
 use App\Models\SeriesInfo;
 use App\Models\VideoWatchHistory;
@@ -268,6 +269,14 @@ class SeriesInfoController extends Controller
             'started'     => true,
             'trackingKey' => $trackingKey,
         ]);
+    }
+
+
+    public function refreshAllEpisodes(EpisodeSyncService $episodeSyncService): JsonResponse
+    {
+        $result = $episodeSyncService->syncAllSeries('manual');
+
+        return response()->json($result, $result['status'] === 'error' ? 500 : 200);
     }
 
     public function scrapeStatus(string $trackingKey): JsonResponse
