@@ -21,6 +21,8 @@ class ScrapeEpisodesCommand extends Command
         {--episode-id= : Traiter un seul épisode}
         {--list-page-url= : URL de la page liste à scraper}
         {--series-info-id= : Retenter uniquement les épisodes en erreur d\'une série (skip scan)}
+        {--episode-start= : Numéro d\'épisode minimum à traiter}
+        {--episode-end= : Numéro d\'épisode maximum à traiter}
         {--tracking-key= : Clé de suivi de progression}
         {--retry-errors : Rejouer les statuts error}
         {--only-pending : Traiter uniquement les statuts pending}';
@@ -66,6 +68,8 @@ class ScrapeEpisodesCommand extends Command
             'limit_option' => $this->option('limit'),
             'retry_errors' => (bool) $this->option('retry-errors'),
             'only_pending' => (bool) $this->option('only-pending'),
+            'episode_start' => $this->option('episode-start'),
+            'episode_end' => $this->option('episode-end'),
         ]);
         $this->updateTrackingStatus('running', 'Initialisation du scraping...');
 
@@ -224,6 +228,19 @@ class ScrapeEpisodesCommand extends Command
             if (! $this->option('retry-errors')) {
                 $query->where('status', '!=', Episode::STATUS_ERROR);
             }
+        }
+
+        $episodeStart = $this->option('episode-start') !== null ? (int) $this->option('episode-start') : null;
+        $episodeEnd = $this->option('episode-end') !== null ? (int) $this->option('episode-end') : null;
+
+        if ($episodeStart !== null) {
+            $query->whereNotNull('episode_number')
+                ->where('episode_number', '>=', $episodeStart);
+        }
+
+        if ($episodeEnd !== null) {
+            $query->whereNotNull('episode_number')
+                ->where('episode_number', '<=', $episodeEnd);
         }
 
         return $query;

@@ -21,6 +21,8 @@ class RunScrapeEpisodesJob implements ShouldQueue
         public string $trackingKey,
         public bool $retryErrors = false,
         public ?int $seriesInfoId = null,
+        public ?int $episodeStart = null,
+        public ?int $episodeEnd = null,
     ) {
     }
 
@@ -41,6 +43,14 @@ class RunScrapeEpisodesJob implements ShouldQueue
             $args['--series-info-id'] = $this->seriesInfoId;
         } else {
             $args['--list-page-url'] = $this->listPageUrl;
+        }
+
+        if ($this->episodeStart !== null) {
+            $args['--episode-start'] = $this->episodeStart;
+        }
+
+        if ($this->episodeEnd !== null) {
+            $args['--episode-end'] = $this->episodeEnd;
         }
 
         $exitCode = Artisan::call('scrape:episodes', $args);
