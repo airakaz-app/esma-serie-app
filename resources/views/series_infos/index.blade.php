@@ -59,7 +59,7 @@
                 @endphp
 
                 <div class="col">
-                    <article class="card h-100 border-0 shadow-sm bg-dark text-light">
+                    <article class="card h-100 border-0 shadow-sm bg-dark text-light position-relative">
                             <div class="ratio ratio-16x9 bg-black">
                                 @if ($seriesInfo->cover_image_url)
                                     <img
@@ -74,10 +74,10 @@
                             </div>
 
                             <div class="card-body d-flex flex-column gap-2">
+                                <a href="{{ route('series-infos.show', $seriesInfo) }}" class="stretched-link" aria-label="Voir la série {{ $seriesInfo->title ?: 'Sans titre' }}"></a>
                                 <div class="d-flex align-items-start justify-content-between gap-2">
-                                    <div class="position-relative pe-2 overflow-hidden">
+                                    <div class="pe-2 overflow-hidden">
                                         <h2 class="h5 card-title mb-0 text-truncate">{{ $seriesInfo->title ?: 'Sans titre' }}</h2>
-                                        <a href="{{ route('series-infos.show', $seriesInfo) }}" class="stretched-link" aria-label="Voir la série {{ $seriesInfo->title ?: 'Sans titre' }}"></a>
                                     </div>
                                     <span class="badge text-bg-primary">{{ $seriesInfo->episodes_count }} épisode(s)</span>
                                 </div>
