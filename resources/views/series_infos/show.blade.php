@@ -93,7 +93,7 @@
         <a href="{{ route('series-infos.index') }}" class="text-decoration-none text-info">← Retour aux séries</a>
         <form method="POST" action="{{ route('logout') }}">
             @csrf
-            <button type="submit" class="btn btn-outline-light btn-sm">Déconnexion</button>
+            <button type="submit" class="btn btn-outline-light btn-sm w-100 w-sm-auto">Déconnexion</button>
         </form>
     </div>
 
@@ -125,7 +125,7 @@
                         <form method="POST" action="{{ route('series-infos.destroy', $seriesInfo) }}" onsubmit="return confirm('Supprimer cette série et tous ses épisodes ?');">
                             @csrf
                             @method('DELETE')
-                            <button type="submit" class="btn btn-outline-danger btn-sm">Supprimer la série</button>
+                            <button type="submit" class="btn btn-outline-danger btn-sm w-100 w-sm-auto">Supprimer la série</button>
                         </form>
                     </div>
 
@@ -159,7 +159,7 @@
                 type="button"
                 id="refreshEpisodesButton"
                 data-retry-url="{{ route('series-infos.retry-errors', $seriesInfo) }}"
-                class="btn btn-outline-warning btn-sm"
+                class="btn btn-outline-warning btn-sm w-100 w-sm-auto"
             >
                 Retry erreurs
             </button>
@@ -173,13 +173,13 @@
                     <input class="form-check-input" type="checkbox" id="selectAllEpisodes">
                     <label class="form-check-label" for="selectAllEpisodes">Tout sélectionner</label>
                 </div>
-                <button type="submit" class="btn btn-outline-danger btn-sm" id="bulkDeleteEpisodesButton" disabled>
+                <button type="submit" class="btn btn-outline-danger btn-sm w-100 w-sm-auto" id="bulkDeleteEpisodesButton" disabled>
                     Supprimer la sélection
                 </button>
-                <button type="button" class="btn btn-outline-success btn-sm hide-download-on-tv" id="bulkDownloadEpisodesButton" disabled>
+                <button type="button" class="btn btn-outline-success btn-sm hide-download-on-tv w-100 w-sm-auto" id="bulkDownloadEpisodesButton" disabled>
                     Télécharger la sélection
                 </button>
-                <button type="button" class="btn btn-success btn-sm hide-download-on-tv" id="downloadSeriesButton">
+                <button type="button" class="btn btn-success btn-sm hide-download-on-tv w-100 w-sm-auto" id="downloadSeriesButton">
                     Télécharger toute la série
                 </button>
             </form>
@@ -248,7 +248,7 @@
                         </div>
 
                         <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start gap-2 mb-2">
                                 <div class="form-check">
                                     <input
                                         class="form-check-input episode-checkbox"
@@ -267,7 +267,7 @@
                                     @if ($playableUrl)
                                         <button
                                             type="button"
-                                            class="btn btn-outline-info btn-sm"
+                                            class="btn btn-outline-info btn-sm w-100 w-sm-auto"
                                             data-bs-toggle="modal"
                                             data-bs-target="#videoPlayerModal"
                                             data-video-url="{{ $playableUrl }}"
@@ -282,7 +282,7 @@
 
                                         <a
                                             href="{{ route('series-infos.episodes.download', ['seriesInfo' => $seriesInfo, 'episode' => $episode]) }}"
-                                            class="btn btn-outline-success btn-sm hide-download-on-tv"
+                                            class="btn btn-outline-success btn-sm hide-download-on-tv w-100 w-sm-auto"
                                         >
                                             Télécharger
                                         </a>
@@ -328,6 +328,15 @@
         <div class="modal-content bg-dark text-light border border-secondary-subtle">
             <div class="modal-header">
                 <h5 class="modal-title" id="videoPlayerModalLabel">Lecture vidéo</h5>
+                <p class="small mb-0 mt-1 me-auto pe-3 text-break d-none" id="videoPlayerUrlWrapper">
+                    <a
+                        id="videoPlayerUrlLink"
+                        href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="link-info text-decoration-underline"
+                    ></a>
+                </p>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
             </div>
             <div class="modal-body p-2 p-md-3 gap-2">
@@ -834,6 +843,14 @@
                 modalTitle.textContent = videoTitle;
             }
 
+            const videoPlayerUrlWrapper = document.getElementById('videoPlayerUrlWrapper');
+            const videoPlayerUrlLink = document.getElementById('videoPlayerUrlLink');
+            if (videoPlayerUrlWrapper && videoPlayerUrlLink) {
+                videoPlayerUrlLink.href = videoUrl;
+                videoPlayerUrlLink.textContent = videoUrl;
+                videoPlayerUrlWrapper.classList.remove('d-none');
+            }
+
             if (player === null) {
                 player = new Plyr(videoElement, {
                     controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'fullscreen'],
@@ -898,6 +915,14 @@
             videoElement.load();
             activeVideo = null;
             updateVideoStatus('');
+
+            const videoPlayerUrlWrapper = document.getElementById('videoPlayerUrlWrapper');
+            const videoPlayerUrlLink = document.getElementById('videoPlayerUrlLink');
+            if (videoPlayerUrlWrapper && videoPlayerUrlLink) {
+                videoPlayerUrlLink.href = '#';
+                videoPlayerUrlLink.textContent = '';
+                videoPlayerUrlWrapper.classList.add('d-none');
+            }
         });
 
         videoElement.addEventListener('ended', () => {
