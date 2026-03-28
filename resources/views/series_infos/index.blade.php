@@ -20,11 +20,11 @@
             <p class="text-secondary mb-0">Cliquez sur une carte pour afficher les épisodes liés.</p>
         </div>
 
-        <div class="d-grid gap-2 d-sm-flex">
-            <button type="button" id="openAddSeriesModal" class="btn btn-primary w-100 w-sm-auto">Ajouter</button>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" id="openAddSeriesModal" class="btn btn-primary w-auto">Ajouter</button>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button type="submit" class="btn btn-outline-light w-100 w-sm-auto">Déconnexion</button>
+                <button type="submit" class="btn btn-outline-light w-auto">Déconnexion</button>
             </form>
         </div>
     </header>
@@ -137,7 +137,7 @@
                         autocomplete="off"
                         dir="auto"
                     >
-                    <button type="button" id="searchBtn" class="btn btn-outline-light w-100 w-sm-auto">
+                    <button type="button" id="searchBtn" class="btn btn-outline-light w-auto">
                         <span id="searchSpinner" class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
                         Rechercher
                     </button>
@@ -280,7 +280,7 @@
                         <div class="fw-semibold text-truncate" dir="auto">${item.title}</div>
                         <div class="small text-secondary text-truncate">${item.url}</div>
                     </div>
-                    <button type="button" class="btn btn-sm btn-success flex-shrink-0 w-100 w-sm-auto">Ajouter</button>
+                    <button type="button" class="btn btn-sm btn-success flex-shrink-0 w-auto">Ajouter</button>
                 `;
 
                 card.querySelector('button').addEventListener('click', () => {
