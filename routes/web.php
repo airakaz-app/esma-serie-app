@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthenticatedSessionController;
 use App\Http\Controllers\SeriesInfoController;
 use App\Http\Controllers\VideoWatchHistoryController;
+use App\Http\Controllers\ScraperController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function (): void {
@@ -14,6 +15,10 @@ Route::redirect('/', '/series-infos');
 
 Route::middleware('auth')->group(function (): void {
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
+
+    Route::get('/scraper', [ScraperController::class, 'index'])->name('scraper.index');
+    Route::post('/api/scraper/scrape', [ScraperController::class, 'scrape'])->name('api.scraper.scrape');
+    Route::post('/api/scraper/clear-cache', [ScraperController::class, 'clearCache'])->name('api.scraper.clear-cache');
 
     Route::get('/series-infos', [SeriesInfoController::class, 'index'])->name('series-infos.index');
     Route::get('/series-infos/search-external', [SeriesInfoController::class, 'searchExternal'])->name('series-infos.search-external');

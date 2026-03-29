@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>جميع المسلسلات - Scraper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            animation: fadeInDown 0.6s ease-out;
+        }
+
+        header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background: white;
+            color: #667eea;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 30px;
+            color: white;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .loading-container {
+            display: none;
+            text-align: center;
+            margin-bottom: 30px;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .loading-container.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .progress-bar {
+            width: 100%;
+            max-width: 400px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+            margin: 15px auto;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: white;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            color: white;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        @media (max-width: 1200px) {
+            .grid {
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                gap: 15px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 12px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+
+            header h1 {
+                font-size: 1.8em;
+            }
+        }
+
+        .serie-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        .serie-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .serie-image {
+            width: 100%;
+            aspect-ratio: 2/3;
+            object-fit: cover;
+            background: #e0e0e0;
+        }
+
+        .serie-title {
+            padding: 12px;
+            text-align: center;
+            font-size: 0.95em;
+            color: #333;
+            line-height: 1.4;
+            font-weight: 500;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .error-message.active {
+            display: block;
+        }
+
+        .success-message {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        .success-message.active {
+            display: block;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: white;
+            padding: 40px 20px;
+        }
+
+        .empty-state-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .cache-info {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        .clear-cache-btn {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 2px solid white;
+            padding: 8px 16px;
+            font-size: 0.85em;
+        }
+
+        .clear-cache-btn:hover {
+            background: white;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>جميع المسلسلات</h1>
+            <p>تجميع شامل لجميع المسلسلات المتاحة</p>
+        </header>
+
+        <div class="error-message" id="errorMessage"></div>
+        <div class="success-message" id="successMessage"></div>
+
+        <div class="controls">
+            <button id="startBtn" onclick="startScraping()">🚀 بدء الحصول على البيانات</button>
+            <button id="clearBtn" class="clear-cache-btn" onclick="clearCache()">🗑️ مسح الذاكرة المؤقتة</button>
+        </div>
+
+        <div class="cache-info" id="cacheInfo"></div>
+
+        <div class="loading-container" id="loadingContainer">
+            <div class="spinner"></div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text">
+                <span id="progressText">جاري التحميل...</span>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-number" id="totalCount">0</span>
+                <span class="stat-label">إجمالي المسلسلات</span>
+            </div>
+            <div class="stat">
+                <span class="stat-number" id="pageCount">0</span>
+                <span class="stat-label">عدد الصفحات</span>
+            </div>
+        </div>
+
+        <div id="gridContainer"></div>
+
+        <div class="empty-state" id="emptyState" style="display: none;">
+            <div class="empty-state-icon">📭</div>
+            <h2>لا توجد بيانات</h2>
+            <p>اضغط على الزر أعلاه لبدء الحصول على البيانات</p>
+        </div>
+    </div>
+
+    <script>
+        // ==================== CONFIGURATION ====================
+        const CORS_PROXY = 'https://corsproxy.io/?url=';
+        const BASE_URL = 'https://n.esheaq.onl';
+        const STORAGE_KEY = 'series_data';
+        const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 heures
+
+        // ==================== DATA INITIALIZATION ====================
+        const INITIAL_DATA = [
+            { "titre": "مسلسل ميرا: كأن كل شيء على ما يرام مترجم", "url": "https://n.esheaq.onl/series/4dqmdplyoy/", "image": "https://n.esheaq.onl/wp-content/uploads/2026/03/1f0e4349-5b7b-45af-9f07-3009e108a583.webp" },
+            { "titre": "مسلسل الياسمين مترجم", "url": "https://n.esheaq.onl/series/p59ltatvwc/", "image": "https://n.esheaq.onl/wp-content/uploads/2026/03/MV5BZmMwNzlhNmYtZGFlMy00NGE4LTk5MDMtNGZiMDc2ZGEwMTRkXkEyXkFqcGc@._V1_-scaled.jpg" },
+            { "titre": "مسلسل لن يحدث لنا شيء مترجم", "url": "https://n.esheaq.onl/series/cbq03orvb1/", "image": "https://n.esheaq.onl/wp-content/uploads/2026/03/MV5BOGNhNDRhMmItMDJmNi00ZmJhLThkYzAtYjEwMzdjY2FiOTkxXkEyXkFqcGc@._V1_.jpg" },
+            { "titre": "مسلسل الشجاع مترجمة", "url": "https://n.esheaq.onl/series/0iffaq38fn/", "image": "https://n.esheaq.onl/wp-content/uploads/2026/03/Shab-tmp-large.jpg" },
+            { "titre": "مسلسل القبيحة مترجمة", "url": "https://n.esheaq.onl/series/7hxma8nii9/", "image": "https://n.esheaq.onl/wp-content/uploads/2026/03/القبيحة-موقع-قرمزي.webp" }
+        ];
+
+        // ==================== STATE ====================
+        let allSeries = [];
+        let isScraping = false;
+
+        // ==================== INITIALIZATION ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFromCache();
+            updateUI();
+            updateCacheInfo();
+        });
+
+        // ==================== CACHE MANAGEMENT ====================
+        function loadFromCache() {
+            try {
+                const cached = localStorage.getItem(STORAGE_KEY);
+                if (cached) {
+                    const data = JSON.parse(cached);
+                    if (isDataFresh(data.timestamp)) {
+                        allSeries = data.series;
+                        showSuccessMessage('✅ تم تحميل البيانات من الذاكرة المؤقتة');
+                        return true;
+                    } else {
+                        clearCache();
+                    }
+                }
+            } catch (error) {
+                console.error('خطأ في تحميل الذاكرة المؤقتة:', error);
+            }
+            return false;
+        }
+
+        function isDataFresh(timestamp) {
+            return Date.now() - timestamp < CACHE_DURATION;
+        }
+
+        function saveToCache(series) {
+            try {
+                const data = {
+                    series: series,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            } catch (error) {
+                console.error('خطأ في حفظ الذاكرة المؤقتة:', error);
+            }
+        }
+
+        function clearCache() {
+            localStorage.removeItem(STORAGE_KEY);
+            allSeries = [];
+            updateUI();
+            updateCacheInfo();
+            showSuccessMessage('✅ تم مسح الذاكرة المؤقتة');
+        }
+
+        function updateCacheInfo() {
+            const cacheInfo = document.getElementById('cacheInfo');
+            const cached = localStorage.getItem(STORAGE_KEY);
+            if (cached) {
+                const data = JSON.parse(cached);
+                const timeAgo = formatTimeAgo(data.timestamp);
+                cacheInfo.textContent = `📦 آخر تحديث: ${timeAgo}`;
+            } else {
+                cacheInfo.textContent = '';
+            }
+        }
+
+        function formatTimeAgo(timestamp) {
+            const now = Date.now();
+            const diff = now - timestamp;
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(diff / 3600000);
+            const days = Math.floor(diff / 86400000);
+
+            if (minutes < 1) return 'الآن';
+            if (minutes < 60) return `قبل ${minutes} دقيقة`;
+            if (hours < 24) return `قبل ${hours} ساعة`;
+            return `قبل ${days} يوم`;
+        }
+
+        // ==================== SCRAPING ====================
+        async function startScraping() {
+            if (isScraping) return;
+
+            isScraping = true;
+            allSeries = [...INITIAL_DATA]; // Démarrer avec les données initiales
+            document.getElementById('startBtn').disabled = true;
+            showLoading(true);
+            hideErrorMessage();
+            hideSuccessMessage();
+
+            try {
+                // Étape 1: Trouver l'URL de la page "جميع المسلسلات"
+                updateProgress('Recherche de la page des séries...', 0);
+                const allSeriesPageUrl = await findAllSeriesPage();
+
+                if (!allSeriesPageUrl) {
+                    throw new Error('Impossible de trouver la page des séries');
+                }
+
+                // Étape 2: Scraper toutes les pages
+                updateProgress('Début du scraping...', 10);
+                await scrapeAllPages(allSeriesPageUrl);
+
+                // Sauvegarder et afficher
+                saveToCache(allSeries);
+                updateUI();
+                showSuccessMessage(`✅ Succès! ${allSeries.length} séries trouvées`);
+
+            } catch (error) {
+                console.error('Erreur:', error);
+                showErrorMessage(`❌ Erreur: ${error.message}`);
+            } finally {
+                isScraping = false;
+                showLoading(false);
+                document.getElementById('startBtn').disabled = false;
+                updateCacheInfo();
+            }
+        }
+
+        async function findAllSeriesPage() {
+            const response = await fetchWithCORS(BASE_URL);
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(response, 'text/html');
+
+            // Chercher le lien "جميع المسلسلات" dans le menu de navigation
+            const navLinks = doc.querySelectorAll('nav a, .menu a, .nav a');
+            for (const link of navLinks) {
+                if (link.textContent.includes('جميع المسلسلات') || link.textContent.includes('المسلسلات')) {
+                    const href = link.getAttribute('href');
+                    if (href) {
+                        console.log('Page trouvée:', href);
+                        return href;
+                    }
+                }
+            }
+
+            // Sinon, chercher dans tous les liens
+            const allLinks = doc.querySelectorAll('a');
+            for (const link of allLinks) {
+                if (link.textContent.includes('جميع المسلسلات')) {
+                    const href = link.getAttribute('href');
+                    if (href) return href;
+                }
+            }
+
+            throw new Error('Lien "جميع المسلسلات" non trouvé');
+        }
+
+        async function scrapeAllPages(startUrl) {
+            let currentUrl = startUrl;
+            let pageCount = 0;
+            const maxPages = 50; // Limite de sécurité
+
+            while (currentUrl && pageCount < maxPages) {
+                pageCount++;
+                updateProgress(`Scraping page ${pageCount}...`, 10 + (pageCount * 5));
+
+                const response = await fetchWithCORS(currentUrl);
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(response, 'text/html');
+
+                // Extraire les séries de cette page
+                const articles = doc.querySelectorAll('article');
+                console.log(`Page ${pageCount}: ${articles.length} articles trouvés`);
+
+                for (const article of articles) {
+                    const link = article.querySelector('a');
+                    const image = article.querySelector('img');
+
+                    if (link && image) {
+                        const titre = link.getAttribute('title') || link.textContent.trim();
+                        const url = link.getAttribute('href');
+                        const imageUrl = image.getAttribute('src') || image.getAttribute('data-src');
+
+                        if (titre && url && imageUrl) {
+                            // Éviter les doublons
+                            if (!allSeries.some(s => s.url === url)) {
+                                allSeries.push({
+                                    titre: titre.trim(),
+                                    url: url,
+                                    image: imageUrl
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Chercher le lien de la page suivante
+                const nextLink = findNextPageLink(doc);
+                currentUrl = nextLink;
+
+                if (!nextLink) {
+                    console.log('Fin du scraping - aucun lien suivant trouvé');
+                    break;
+                }
+
+                // Petit délai pour ne pas surcharger le serveur
+                await sleep(500);
+            }
+
+            console.log(`Scraping terminé: ${pageCount} pages, ${allSeries.length} séries`);
+        }
+
+        function findNextPageLink(doc) {
+            // Chercher le lien "suivant" ou numéroté
+            const pagination = doc.querySelector('.pagination, .nav-pagination, .paging');
+            if (!pagination) return null;
+
+            const links = pagination.querySelectorAll('a');
+            for (const link of links) {
+                const text = link.textContent.trim();
+                if (text === 'التالي' || text === '>' || text === 'Next' || text === 'Suivant') {
+                    return link.getAttribute('href');
+                }
+            }
+
+            // Chercher les liens numérotés
+            let lastNumberedLink = null;
+            for (const link of links) {
+                const text = link.textContent.trim();
+                if (/^\d+$/.test(text)) {
+                    lastNumberedLink = link;
+                }
+            }
+
+            if (lastNumberedLink) {
+                const nextNum = parseInt(lastNumberedLink.textContent) + 1;
+                const possibleNextLink = Array.from(links).find(l => l.textContent.trim() === nextNum.toString());
+                if (possibleNextLink) {
+                    return possibleNextLink.getAttribute('href');
+                }
+            }
+
+            return null;
+        }
+
+        // ==================== UTILITIES ====================
+        async function fetchWithCORS(url) {
+            const corsUrl = CORS_PROXY + encodeURIComponent(url);
+            const response = await fetch(corsUrl);
+            if (!response.ok) {
+                throw new Error(`Erreur HTTP: ${response.status}`);
+            }
+            return await response.text();
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        function updateProgress(text, percentage) {
+            document.getElementById('progressText').textContent = text;
+            const fill = document.getElementById('progressFill');
+            fill.style.width = percentage + '%';
+        }
+
+        function showLoading(show) {
+            const container = document.getElementById('loadingContainer');
+            if (show) {
+                container.classList.add('active');
+            } else {
+                container.classList.remove('active');
+            }
+        }
+
+        function showErrorMessage(message) {
+            const elem = document.getElementById('errorMessage');
+            elem.textContent = message;
+            elem.classList.add('active');
+        }
+
+        function hideErrorMessage() {
+            document.getElementById('errorMessage').classList.remove('active');
+        }
+
+        function showSuccessMessage(message) {
+            const elem = document.getElementById('successMessage');
+            elem.textContent = message;
+            elem.classList.add('active');
+            setTimeout(() => elem.classList.remove('active'), 3000);
+        }
+
+        function hideSuccessMessage() {
+            document.getElementById('successMessage').classList.remove('active');
+        }
+
+        // ==================== UI RENDERING ====================
+        function updateUI() {
+            const container = document.getElementById('gridContainer');
+            const emptyState = document.getElementById('emptyState');
+
+            document.getElementById('totalCount').textContent = allSeries.length;
+            document.getElementById('pageCount').textContent = Math.ceil(allSeries.length / 50);
+
+            if (allSeries.length === 0) {
+                container.innerHTML = '';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            container.innerHTML = allSeries.map((serie, index) => `
+                <a href="${serie.url}" target="_blank" rel="noopener noreferrer" class="serie-card">
+                    <img src="${serie.image}" alt="${serie.titre}" class="serie-image" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22300%22%3E%3Crect fill=%22%23ddd%22 width=%22200%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 font-size=%2214%22 fill=%22%23999%22%3EImage not found%3C/text%3E%3C/svg%3E'">
+                    <div class="serie-title">${serie.titre}</div>
+                </a>
+            `).join('');
+        }
+
+        // Log initial state
+        console.log('🚀 Application lancée');
+        console.log(`📚 ${INITIAL_DATA.length} séries initiales chargées`);
+    </script>
+</body>
+</html>

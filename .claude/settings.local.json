@@ -16,7 +16,15 @@
       "Bash(php -l app/Services/Scraper/BrowserClickService.php)",
       "Bash(php -l app/Services/Scraper/HtmlFetcher.php)",
       "Bash(find /d/laragon/www/esma-serie-app -name *ScrapeEpisodes* -type f)",
-      "Bash(php -l app/Jobs/RunScrapeEpisodesJob.php)"
+      "Bash(php -l app/Jobs/RunScrapeEpisodesJob.php)",
+      "Bash(php -l app/Services/Scraper/ExternalSeriesScraperService.php)",
+      "Bash(php -l app/Http/Controllers/ScraperController.php)",
+      "Bash(php test_scraper.php)",
+      "Bash(grep -E \"\\\\.\\(blade|js|php\\)$\")",
+      "Bash(npm list:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(find D:laragonwwwesma-serie-app -not -path */node_modules/* -not -path */.git/* -not -path */vendor/* -not -path */.claude/* -type d)"
     ]
   }
 }
